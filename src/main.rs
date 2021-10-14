@@ -21,7 +21,7 @@ struct Opts {
     /// Bootstrap broker address
     #[structopt(short, long)]
     brokers: String,
-    /// Additional kafka producer options
+    /// Additional kafka client options
     #[structopt(short = "X", long, parse(try_from_str = parseopts))]
     kafka_options: Vec<(String, String)>,
 
@@ -29,13 +29,13 @@ struct Opts {
     #[structopt(short, long, default_value = "10 s", parse(try_from_str = parsehuman))]
     interval: Duration,
 
-    /// Polling interval
+    /// Metadata retrieval timeout
     #[structopt(short, long, default_value = "5 s", parse(try_from_str = parsehuman))]
     timeout: Duration,
 
     /// How'd you like to view your data
     #[structopt(subcommand)]
-    mode: Mode
+    mode: Option<Mode>
 }
 
 #[derive(StructOpt, Debug)]
@@ -131,7 +131,7 @@ fn main() -> Result<()> {
     let mut next = Instant::now() + opts.interval / 10;
     let mut offsetss = PartitionData::new();
     match opts.mode {
-        Mode::Print => loop {
+        None | Some(Mode::Print) => loop {
             println!("\n{}", chrono::Local::now());
             let data = fetchup(client, &opts, &mut offsetss);
             for TopicData { name, current_rate, underreplicated, fetch_error, partitions, ..} in data {
@@ -159,7 +159,7 @@ fn main() -> Result<()> {
                 std::thread::sleep(duration);
             }
         },
-        Mode::Export { listen } => {
+        Some(Mode::Export { listen }) => {
             let exporter = prometheus_exporter::start(listen)
                 .context("Start prometheus listener")?;
             let m_total_messages = register_int_counter_vec!("kafka_light_message_count", "Sum of all high watermarks", &["topic"])?;
