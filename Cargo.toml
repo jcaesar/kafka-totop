@@ -9,7 +9,7 @@ edition = "2018"
 prometheus_exporter = "0.8.2"
 prometheus = { version =  "0.13.0", features = ["process"] }
 rdkafka = "0.26.0"
-clap = "3.0.0-beta.4"
 anyhow = "1.0.44"
 humantime = "2.1.0"
 chrono = "0.4.19"
+structopt = "0.3.23"

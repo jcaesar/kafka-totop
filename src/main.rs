@@ -1,4 +1,4 @@
-use clap::Clap;
+use structopt::StructOpt;
 use anyhow::{Result, Context};
 use std::{
     collections::HashMap,
@@ -10,25 +10,25 @@ use rdkafka::{
 };
 
 /// Are my messages flowing?
-#[derive(Clap, Debug)]
-#[clap(version = "0.1", author = "Julius Michaelis")]
+#[derive(StructOpt, Debug)]
+#[structopt(version = "0.1", author = "Julius Michaelis")]
 struct Opts {
     /// Bootstrap broker address
-    #[clap(short, long)]
+    #[structopt(short, long)]
     brokers: String,
     /// Additional kafka producer options
-    #[clap(short = 'X', long, parse(try_from_str = parseopts))]
+    #[structopt(short = "X", long, parse(try_from_str = parseopts))]
     kafka_options: Vec<(String, String)>,
 
     /// Polling interval
-    #[clap(short, long, default_value = "10 s", parse(try_from_str = parsehuman))]
+    #[structopt(short, long, default_value = "10 s", parse(try_from_str = parsehuman))]
     interval: Duration,
 
     /// Polling interval
-    #[clap(short, long, default_value = "60 s", parse(try_from_str = parsehuman))]
+    #[structopt(short, long, default_value = "60 s", parse(try_from_str = parsehuman))]
     timeout: Duration,
 //
-//    #[clap(subcommand)]
+//    #[structopt(subcommand)]
 //    mode: Mode
 }
 
@@ -56,7 +56,7 @@ fn parsehuman(arg: &str) -> Result<Duration> {
 type MetaData = HashMap<String, HashMap<i32, (i64, Instant)>>;
 
 fn main() -> Result<()> {
-    let opts = Opts::parse();
+    let opts = Opts::from_args();
     let mut config = KafkaConfig::new();
     config.set("bootstrap.servers", opts.brokers);
     for (k, v) in opts.kafka_options {
