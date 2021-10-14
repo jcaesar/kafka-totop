@@ -133,7 +133,8 @@ fn main() -> Result<()> {
     match opts.mode {
         None | Some(Mode::Print) => loop {
             println!("\n{}", chrono::Local::now());
-            let data = fetchup(client, &opts, &mut offsetss);
+            let mut data = fetchup(client, &opts, &mut offsetss);
+            data.sort_by_key(|TopicData { total_messages, fetch_error, underreplicated, ..}| (*fetch_error, *underreplicated, *total_messages));
             for TopicData { name, current_rate, underreplicated, fetch_error, partitions, ..} in data {
                 match current_rate {
                     None => if fetch_error != partitions {
