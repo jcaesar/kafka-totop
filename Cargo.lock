@@ -105,6 +105,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cmake"
+version = "0.1.45"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eb6210b637171dfba4cda12e579ac6dc73f5165ad56133e5d72ef3131f320855"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "crc32fast"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -332,6 +341,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "cmake",
  "humantime",
  "prometheus 0.13.0",
  "prometheus_exporter",
@@ -621,6 +631,7 @@ version = "4.0.0+1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "54f24572851adfeb525fdc4a1d51185898e54fed4e8d8dba4fadb90c6b4f0422"
 dependencies = [
+ "cmake",
  "libc",
  "libz-sys",
  "num_enum",

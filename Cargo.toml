@@ -7,9 +7,13 @@ edition = "2018"
 
 [dependencies]
 prometheus_exporter = "0.8.2"
-prometheus = { version =  "0.13.0", features = ["process"] }
-rdkafka = "0.26.0"
+prometheus = { version =  "*", features = ["process"] }
+rdkafka = { version = "0.26.0", features = ["cmake_build"] }
 anyhow = "1.0.44"
 humantime = "2.1.0"
 chrono = "0.4.19"
 structopt = "0.3.23"
+
+[build-dependencies]
+# Force version that doesn't use cmake --paralllel
+cmake = "<0.1.46"
