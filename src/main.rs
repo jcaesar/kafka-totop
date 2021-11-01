@@ -51,7 +51,7 @@ enum Mode {
 }
 
 fn parseopts(arg: &str) -> Result<(String, String)> {
-    let mut split = arg.splitn(2, "=");
+    let mut split = arg.splitn(2, '=');
     if let (Some(k), Some(v), None) = (split.next(), split.next(), split.next()) {
         Ok((k.to_owned(), v.to_owned()))
     } else {
