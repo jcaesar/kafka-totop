@@ -1,6 +1,8 @@
 use anyhow::{Context, Result};
+use chrono::{DateTime, Datelike, Local, Timelike};
 use itertools::Itertools;
 use std::collections::HashSet;
+use std::iter::once;
 use std::sync::Mutex;
 use std::{
     collections::{hash_map::Entry, BTreeMap, HashMap},
@@ -80,10 +82,12 @@ pub(crate) fn run(opts: &Opts) -> Result<()> {
         // TODO: Discard old values
         terminal.draw(|f| {
             let interval = Duration::from_secs(900); // TODO: CLI option
-            let size = f.size();
-            let buckets = size.width as u32 * 2;
+           let height = f.size().height - 1;
+            let width = f.size().width - 7;
+            let buckets = width as u32 * 2;
             let bucket_size = (interval / buckets).as_secs_f64();
             let now = Instant::now();
+            let now_date = Local::now();
             let draw_start = now - interval;
             let mut max = 1.0f64;
             let data = data
@@ -124,16 +128,24 @@ pub(crate) fn run(opts: &Opts) -> Result<()> {
                         .data(&padata)
                 })
                 .collect();
+            let long_time = interval > Duration::from_secs(3600 * 6);
+            let date_length = match long_time {
+                true => 19,
+                false => 8,
+            };
+            let space = 5;
             let chart = Chart::new(data)
                 .x_axis(
                     Axis::default()
                         .style(Style::default().fg(Color::White))
-                        .bounds([-900.0, 0.0])
+                        .bounds([-interval.as_secs_f64(), 0.0])
                         .labels(
-                            ["0.0", "5.0", "10.0"]
-                                .iter()
-                                .cloned()
-                                .map(Span::from)
+                            once(Span::from(""))
+                                .chain((1..=width)
+                                    .step_by(date_length + space)
+                                    .map(|i| Span::from(chrono::Duration::from_std(interval.mul_f64(1. - i as f64 / width as f64))
+                                        .map(|dur: chrono::Duration| format_time(now_date - dur, long_time))
+                                        .unwrap_or("X".repeat(date_length)))))
                                 .collect(),
                         ),
                 )
@@ -143,15 +155,15 @@ pub(crate) fn run(opts: &Opts) -> Result<()> {
                         .style(Style::default().fg(Color::White))
                         .bounds([0.0, max])
                         .labels(
-                            (0..=size.height)
+                            (0..=height)
                                 .step_by(10)
                                 .map(|p| {
-                                    Span::from(format_number(p as f64 / size.height as f64 * max))
+                                    Span::from(format_number(p as f64 / height as f64 * max))
                                 })
                                 .collect(),
                         ),
                 );
-            f.render_widget(chart, size);
+            f.render_widget(chart, f.size());
         })?;
         match userrx.recv_timeout(Duration::from_millis(100)) {
             Ok(Ok(Key::Char('q'))) => break,
@@ -162,6 +174,13 @@ pub(crate) fn run(opts: &Opts) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn format_time(time: DateTime<Local>, long: bool) -> String {
+    match long {
+        false => format!("{:02}:{:02}:{:02}", time.hour(), time.minute(), time.second()),
+        true => format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", time.year(), time.month(), time.day(), time.hour(), time.minute(), time.second())
+    }
 }
 
 fn format_number(num: f64) -> String {
