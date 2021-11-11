@@ -21,6 +21,7 @@ use ::tui::{
     text::Span,
     widgets::{Chart, GraphType},
 };
+use number_prefix::NumberPrefix;
 
 use crate::*;
 
@@ -145,7 +146,7 @@ pub(crate) fn run(opts: &Opts) -> Result<()> {
                             (0..=size.height)
                                 .step_by(10)
                                 .map(|p| {
-                                    Span::from(format!("{}", p as f64 / size.height as f64 * max))
+                                    Span::from(format_number(p as f64 / size.height as f64 * max))
                                 })
                                 .collect(),
                         ),
@@ -161,6 +162,13 @@ pub(crate) fn run(opts: &Opts) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn format_number(num: f64) -> String {
+    match NumberPrefix::decimal(num) {
+        NumberPrefix::Standalone(num) => format!("{:.0}", num),
+        NumberPrefix::Prefixed(pfx, num) => format!("{:.2}{}", num, pfx),
+    }
 }
 
 fn input(usertx: mpsc::SyncSender<Result<Key, io::Error>>) -> Result<()> {
