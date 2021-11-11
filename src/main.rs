@@ -7,12 +7,12 @@ use std::{
 };
 use rdkafka::{
     ClientConfig as KafkaConfig,
-    client::Client,
 };
 use prometheus_exporter::prometheus::{
     register_int_counter_vec,
     register_int_gauge_vec,
 };
+mod tui;
 
 /// Are my messages flowing?
 #[derive(StructOpt, Debug)]
@@ -47,7 +47,9 @@ enum Mode {
         listen: SocketAddr,
     },
     /// Just throw to stdout
-    Print
+    Print,
+    /// TUI
+    Graph,
 }
 
 fn parseopts(arg: &str) -> Result<(String, String)> {
@@ -73,7 +75,7 @@ struct TopicData {
     partitions: u32,
 }
 
-fn fetchup(client: &Client, opts: &Opts, state: &mut PartitionData) -> Vec<TopicData> {
+fn fetchup(client: &rdkafka::client::Client, opts: &Opts, state: &mut PartitionData) -> Vec<TopicData> {
     let mut ret = vec![];
     match client.fetch_metadata(None, opts.timeout) {
         Ok(metadata) => {
@@ -118,21 +120,20 @@ fn fetchup(client: &Client, opts: &Opts, state: &mut PartitionData) -> Vec<Topic
     ret
 }
 
+
+
 fn main() -> Result<()> {
     let opts = Opts::from_args();
-    let mut config = KafkaConfig::new();
-    config.set("bootstrap.servers", &opts.brokers);
-    for (k, v) in &opts.kafka_options {
-        config.set(k, v);
-    }
-    let client: rdkafka::admin::AdminClient<_> = config.create()
-        .context("Failed to construct client")?;
-    let client = client.inner();
     let mut next = Instant::now() + opts.interval / 10;
     let mut offsetss = PartitionData::new();
     match opts.mode {
+        Some(Mode::Graph) => {
+            tui::run(&opts)
+        },
         None | Some(Mode::Print) => loop {
             println!("\n{}", chrono::Local::now());
+            let client = client(&opts)?;
+            let client = client.inner();
             let mut data = fetchup(client, &opts, &mut offsetss);
             data.sort_by_key(|TopicData { total_messages, fetch_error, underreplicated, ..}| (*fetch_error, *underreplicated, *total_messages));
             for TopicData { name, current_rate, underreplicated, fetch_error, partitions, ..} in data {
@@ -161,6 +162,8 @@ fn main() -> Result<()> {
             }
         },
         Some(Mode::Export { listen }) => {
+            let client = client(&opts)?;
+            let client = client.inner();
             let exporter = prometheus_exporter::start(listen)
                 .context("Start prometheus listener")?;
             let m_total_messages = register_int_counter_vec!("kafka_light_message_count", "Sum of all high watermarks", &["topic"])?;
@@ -182,4 +185,17 @@ fn main() -> Result<()> {
             }
         }
     }
+}
+
+type Client = rdkafka::admin::AdminClient<rdkafka::client::DefaultClientContext>;
+
+fn client(opts: &Opts) -> Result<Client> {
+    let mut config = KafkaConfig::new();
+    config.set("bootstrap.servers", &opts.brokers);
+    for (k, v) in &opts.kafka_options {
+        config.set(k, v);
+    }
+    let client: rdkafka::admin::AdminClient<_> = config.create()
+        .context("Failed to construct client")?;
+    Ok(client)
 }
