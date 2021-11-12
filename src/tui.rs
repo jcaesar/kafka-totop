@@ -180,10 +180,9 @@ pub(crate) fn run(opts: &Opts) -> Result<()> {
                         .style(Style::default().fg(Color::White))
                         .bounds([0.0, maxy])
                         .labels(
-                            (0..=height)
-                                .step_by(10)
+                            (0..=height / 10)
                                 .map(|p| {
-                                    Span::from(format_number(p as f64 / height as f64 * maxy))
+                                    Span::from(format_number(p as f64 / (height / 10) as f64 * maxy))
                                 })
                                 .collect(),
                         ),
