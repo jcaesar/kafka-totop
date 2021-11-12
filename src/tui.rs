@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Datelike, Local, Timelike};
 use itertools::Itertools;
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::iter::once;
 use std::sync::Mutex;
 use std::{
@@ -24,6 +24,7 @@ use ::tui::{
     widgets::{Chart, GraphType},
 };
 use number_prefix::NumberPrefix;
+use rand::Rng;
 
 use crate::*;
 
@@ -258,41 +259,66 @@ enum Message {
     },
 }
 
+#[derive(Debug,PartialEq,Eq,PartialOrd,Ord)]
+struct QueryTask {
+    when: Instant,
+    topic: String, // TODO: intern
+    partition: i32,
+    leader: i32,
+}
+
 fn query_offsets(state: Arc<State>, tx: mpsc::SyncSender<Message>, client: Client) -> Result<()> {
     let mut next = Instant::now();
     let client = client.inner();
     loop {
         next += state.query_interval;
 
-        let mut bads = state.bad_brokers.lock().expect("poisoned").clone();
+        let mut query_tasks = BTreeSet::new(); // Better structures exist for scheduling.
+        // TODO: Timeout probably shouldn't be the entire query interval...
         match client.fetch_metadata(None, state.query_interval) {
             Ok(metadata) => {
+                let now = Instant::now();
                 for topic in metadata.topics() {
-                    for partition in topic.partitions() {
-                        // TODO: Make a nice schedule of when to do the querying, don't do it all at once
-                        if bads.contains(&partition.leader()) {
-                            continue;
-                        }
-                        match client.fetch_watermarks(
-                            &topic.name(),
-                            partition.id(),
-                            state.query_interval,
-                        ) {
-                            Ok((_low, high)) => tx.send(Message::PartitionOffsets {
-                                now: Instant::now(),
-                                topic: topic.name().into(),
-                                partition: partition.id(),
-                                offset: high,
-                            })?,
-
-                            Err(_) => {
-                                bads.insert(partition.leader());
-                            }
-                        };
+                    let partitions = topic.partitions();
+                    let shift = state.query_interval / partitions.len() as u32;
+                    let offset = now + shift.mul_f64(rand_seeder::SipHasher::from(topic.name()).into_rng().gen());
+                    for (i, partition) in partitions.iter().enumerate() {
+                        query_tasks.insert(QueryTask {
+                            when: offset + shift * i as u32,
+                            topic: topic.name().into(),
+                            partition: partition.id(),
+                            leader: partition.leader(),
+                        });
                     }
                 }
             }
-            Err(_) => (),
+            Err(_) => (), // TODO?
+        }
+
+        let mut bads = state.bad_brokers.lock().expect("poisoned").clone();
+        for QueryTask { when, topic, partition, leader } in query_tasks.range(..) {
+            if bads.contains(leader) {
+                continue;
+            }
+            if let Some(sleep) = when.checked_duration_since(Instant::now()) {
+                thread::sleep(sleep);
+            }
+            match client.fetch_watermarks(
+                topic,
+                *partition,
+                state.query_interval,
+            ) {
+                Ok((_low, high)) => tx.send(Message::PartitionOffsets {
+                    now: Instant::now(),
+                    topic: topic.into(),
+                    partition: *partition,
+                    offset: high,
+                })?,
+
+                Err(_) => {
+                    bads.insert(*leader);
+                }
+            };
         }
 
         let now = Instant::now();
