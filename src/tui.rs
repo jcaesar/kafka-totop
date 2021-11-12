@@ -120,6 +120,8 @@ pub(crate) fn run(opts: &Opts) -> Result<()> {
             if maxy < maxv || maxy > 1.5 * maxv {
                 maxy = maxv * 1.25;
             }
+            // TODO: color most active
+            let mut colors = vec![Color::White, Color::Blue, Color::Yellow, Color::Red, Color::Green, Color::Magenta, Color::Cyan];
             let data = data
                 .iter()
                 .map(|(topic, padata, _total)| {
@@ -127,7 +129,7 @@ pub(crate) fn run(opts: &Opts) -> Result<()> {
                         .name(*topic)
                         .marker(symbols::Marker::Braille)
                         .graph_type(GraphType::Line)
-                        .style(Style::default().fg(Color::Cyan)) // TODO: color most active in altering colors
+                        .style(Style::default().fg(colors.pop().unwrap_or(Color::Gray)))
                         .data(&padata)
                 })
                 .collect();
