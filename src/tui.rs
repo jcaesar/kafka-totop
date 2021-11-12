@@ -84,7 +84,7 @@ pub(crate) fn run(opts: &Opts) -> Result<()> {
         // TODO: Discard old values
         terminal.draw(|f| {
             let interval = Duration::from_secs(900); // TODO: CLI option
-           let height = f.size().height - 1;
+            let height = f.size().height - 2;
             let width = f.size().width - 7;
             let buckets = width as u32 * 2;
             let bucket_size = (interval / buckets).as_secs_f64();
@@ -100,16 +100,36 @@ pub(crate) fn run(opts: &Opts) -> Result<()> {
                         .collect::<Vec<_>>();
                     let mut total = 0;
                     for (_, polls) in padata.iter() {
-                        for ((_ai, ao), (bi, bo)) in polls.iter().tuple_windows() {
+                        for ((ai, ao), (bi, bo)) in polls.iter().tuple_windows() {
                             let diff = bo - ao;
                             total += diff;
-                            //let span = bi.checked_duration_since(ai);
-                            // TODO: Split over buckets (do after spreading queries)
-                            if let Some(bedge) = bi.checked_duration_since(draw_start) {
+                            let aedge = ai.checked_duration_since(draw_start);
+                            let bedge = bi.checked_duration_since(draw_start);
+                            let dur = bi.checked_duration_since(*ai);
+                            if let (Some(aedge), Some(bedge), Some(dur)) = (aedge, bedge, dur) {
+                                let aidx = (aedge.as_secs_f64() / bucket_size) as usize;
                                 let bidx = (bedge.as_secs_f64() / bucket_size) as usize;
-                                if let Some((_, v)) = buckets.get_mut(bidx) {
-                                    *v += diff as f64;
-                                    maxv = maxv.max(*v);
+                                if aidx == bidx {
+                                    if let Some((_, v)) = buckets.get_mut(bidx) {
+                                        *v += diff as f64 / bucket_size;
+                                        maxv = maxv.max(*v);
+                                    }
+                                } else {
+                                    let rate = diff as f64 / dur.as_secs_f64();
+                                    if let Some((_, v)) = buckets.get_mut(aidx) {
+                                        *v += rate * ((aidx + 1) as f64 - aedge.as_secs_f64() / bucket_size);
+                                        maxv = maxv.max(*v);
+                                    }
+                                    if aidx + 1 <= bidx - 1 {
+                                        for (_, v) in buckets[aidx + 1 ..= bidx - 1].iter_mut() {
+                                            *v += rate;
+                                            maxv = maxv.max(*v);
+                                        }
+                                    }
+                                    if let Some((_, v)) = buckets.get_mut(bidx) {
+                                        *v += rate * (bedge.as_secs_f64() / bucket_size - bidx as f64);
+                                        maxv = maxv.max(*v);
+                                    }
                                 }
                             }
                         }
