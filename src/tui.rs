@@ -57,6 +57,7 @@ pub(crate) fn run(opts: &Opts) -> Result<()> {
     let mut terminal = Terminal::new(backend)?;
     thread::spawn(|| input(usertx));
     let mut data: HashMap<String, HashMap<i32, BTreeMap<Instant, i64>>> = HashMap::new();
+    let mut maxy = 1.0f64;
     loop {
         loop {
             match offrx.try_recv() {
@@ -90,7 +91,7 @@ pub(crate) fn run(opts: &Opts) -> Result<()> {
             let now = Instant::now();
             let now_date = Local::now();
             let draw_start = now - interval;
-            let mut max = 1.0f64;
+            let mut maxv = 1.0f64;
             let data = data
                 .iter()
                 .map(|(topic, padata)| {
@@ -108,9 +109,7 @@ pub(crate) fn run(opts: &Opts) -> Result<()> {
                                 let bidx = (bedge.as_secs_f64() / bucket_size) as usize;
                                 if let Some((_, v)) = buckets.get_mut(bidx) {
                                     *v += diff as f64;
-                                    if *v > max {
-                                        max = *v;
-                                    }
+                                    maxv = maxv.max(*v);
                                 }
                             }
                         }
@@ -118,6 +117,9 @@ pub(crate) fn run(opts: &Opts) -> Result<()> {
                     (topic, buckets, total)
                 })
                 .collect::<Vec<_>>();
+            if maxy < maxv || maxy > 1.5 * maxv {
+                maxy = maxv * 1.25;
+            }
             let data = data
                 .iter()
                 .map(|(topic, padata, _total)| {
@@ -154,12 +156,12 @@ pub(crate) fn run(opts: &Opts) -> Result<()> {
                     Axis::default()
                         .title(Span::styled("Msgs / s", Style::default().fg(Color::Red)))
                         .style(Style::default().fg(Color::White))
-                        .bounds([0.0, max])
+                        .bounds([0.0, maxy])
                         .labels(
                             (0..=height)
                                 .step_by(10)
                                 .map(|p| {
-                                    Span::from(format_number(p as f64 / height as f64 * max))
+                                    Span::from(format_number(p as f64 / height as f64 * maxy))
                                 })
                                 .collect(),
                         ),
