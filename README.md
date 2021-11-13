@@ -1,6 +1,6 @@
 # ToTop
 
-*Table of Topics*
+*Kafka Table of Topics*
 
 A quick TUI for grasping the message rate in your topics.
 
@@ -10,5 +10,6 @@ Display a graph!
 
 
 Of course, a proper cluster setup would have some kind of monitoring architecture that would give you this information (e.g. based on the [prometheus/jmx_exporter](https://github.com/prometheus/jmx_exporter)).
-But
+But if you encounter a clusterfuck, you wish for an easy alternative that doesn't require restarting your brokers, when just the normal kafka listeners are sufficient.
+
 This repo is a spin-off of [light-kafka-exporter](https://github.com/jcaesar/light-kafka-exporter).
