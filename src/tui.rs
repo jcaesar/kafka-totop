@@ -355,11 +355,12 @@ fn query_offsets(state: Arc<State>, tx: mpsc::SyncSender<Message>, client: Clien
                 let now = Instant::now();
                 for topic in metadata.topics() {
                     let partitions = topic.partitions();
-                    let shift = state.query_interval / partitions.len() as u32;
-                    let offset = now + shift.mul_f64(rand_seeder::SipHasher::from(topic.name()).into_rng().gen());
-                    for (i, partition) in partitions.iter().enumerate() {
+                    let offset = state
+                        .query_interval
+                        .mul_f64(rand_seeder::SipHasher::from(topic.name()).into_rng().gen());
+                    for partition in partitions.iter() {
                         query_tasks.insert(QueryTask {
-                            when: offset + shift * i as u32,
+                            when: now + offset,
                             topic: topic.name().into(),
                             partition: partition.id(),
                             leader: partition.leader(),
