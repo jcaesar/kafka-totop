@@ -5,7 +5,7 @@ use tui::{
     style::{Color, Modifier, Style},
     symbols,
     text::Span,
-    widgets::{Axis, Chart, Dataset, GraphType, Row, Table},
+    widgets::{Axis, Cell, Chart, Dataset, GraphType, Row, Table},
     Terminal,
 };
 
@@ -20,22 +20,53 @@ pub(crate) fn run(opts: &Opts) -> Result<()> {
     let (usertx, userrx) = mpsc::sync_channel(1000);
     thread::spawn(|| input(usertx));
     let mut maxy = 1.0f64;
+    let mut color_assignment = HashMap::new();
     loop {
         scraper.ingest()?;
         terminal.draw(|f| {
+            let mut basestats = scraper.basestats().collect::<Vec<_>>();
+            basestats.sort_by_key(|s| -s.seen);
+            let basestats = basestats;
+
+            let mut colors = LineColor::all_variants();
+            let mut topdogs = basestats
+                .iter()
+                .take(colors.len())
+                .map(|s| s.topic)
+                .collect::<HashSet<_>>();
+            color_assignment.retain(|topic: &String, _| topdogs.contains(topic.as_str()));
+            for color in color_assignment.values() {
+                colors.remove(color);
+            }
+            let mut colors = colors.drain();
+            for dog in topdogs.drain() {
+                // TODO: It's high time for interned topic string names
+                color_assignment
+                    .entry(dog.to_string())
+                    .or_insert_with(|| colors.next().expect("no more dogs than colors"));
+            }
+            let topic_color = |topic: &str| {
+                color_assignment
+                    .get(topic)
+                    .map(|c| (*c).into())
+                    .unwrap_or(Color::Gray)
+            };
+
             let chunks = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Min(10), Constraint::Length(46)].as_ref())
                 .split(f.size());
-            let basestats = scraper.basestats().collect::<Vec<_>>();
             let table = Table::new(basestats.iter().map(
                 |stats::TopicStats {
                      topic, total, rate, ..
                  }| {
                     Row::new(vec![
-                        topic.to_string(),
-                        right_align(format_number(*total as f64), 7),
-                        right_align(rate.map(format_number).unwrap_or_default(), 7),
+                        Cell::from(Span::styled(
+                            *topic,
+                            Style::default().fg(topic_color(topic)),
+                        )),
+                        Cell::from(right_align(format_number(*total as f64), 7)),
+                        Cell::from(right_align(rate.map(format_number).unwrap_or_default(), 7)),
                     ])
                 },
             ))
@@ -60,24 +91,15 @@ pub(crate) fn run(opts: &Opts) -> Result<()> {
             if maxy < maxv || maxy > 1.5 * maxv {
                 maxy = maxv * 1.25;
             }
-            // TODO: color most active
-            let mut colors = vec![
-                Color::White,
-                Color::Blue,
-                Color::Yellow,
-                Color::Red,
-                Color::Green,
-                Color::Magenta,
-                Color::Cyan,
-            ];
             let data = data
                 .iter()
+                .rev()
                 .map(|(topic, padata, _total)| {
                     Dataset::default()
                         .name(*topic)
                         .marker(symbols::Marker::Braille)
                         .graph_type(GraphType::Line)
-                        .style(Style::default().fg(colors.pop().unwrap_or(Color::Gray)))
+                        .style(Style::default().fg(topic_color(topic)))
                         .data(&padata)
                 })
                 .collect();
@@ -88,6 +110,7 @@ pub(crate) fn run(opts: &Opts) -> Result<()> {
             };
             let space = 5;
             let chart = Chart::new(data)
+                .hidden_legend_constraints((Constraint::Percentage(0), Constraint::Percentage(0)))
                 .x_axis(
                     Axis::default()
                         .style(Style::default().fg(Color::White))
@@ -175,4 +198,39 @@ fn input(usertx: mpsc::SyncSender<Result<Key, io::Error>>) -> Result<()> {
         usertx.send(evt).context("Send fail")?;
     }
     anyhow::bail!("Unexpected input closed");
+}
+
+// Bit stupid to duplicate this here, but Color can't be inserted into a hash map
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum LineColor {
+    Blue,
+    Yellow,
+    Red,
+    Green,
+    Magenta,
+    Cyan,
+    White,
+}
+
+impl Into<Color> for LineColor {
+    fn into(self) -> Color {
+        match self {
+            LineColor::Blue => Color::Blue,
+            LineColor::Yellow => Color::Yellow,
+            LineColor::Red => Color::Red,
+            LineColor::Green => Color::Green,
+            LineColor::Magenta => Color::Magenta,
+            LineColor::Cyan => Color::Cyan,
+            LineColor::White => Color::White,
+        }
+    }
+}
+impl LineColor {
+    pub(crate) fn all_variants() -> HashSet<Self> {
+        use LineColor::*;
+        [Blue, Yellow, Red, Green, Magenta, Cyan, White]
+            .iter()
+            .map(Clone::clone)
+            .collect()
+    }
 }
