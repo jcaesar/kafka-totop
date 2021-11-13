@@ -136,6 +136,7 @@ pub(crate) fn run(opts: &Opts) -> Result<()> {
                     }
                     (topic, buckets, total)
                 })
+                .filter(|(_, _, total)| *total != 0)
                 .collect::<Vec<_>>();
             if maxy < maxv || maxy > 1.5 * maxv {
                 maxy = maxv * 1.25;
