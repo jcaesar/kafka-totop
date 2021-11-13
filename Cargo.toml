@@ -1,8 +1,12 @@
 [package]
-name = "light-kafka-exporter"
+name = "totop"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.56"
+
+[[bin]]
+name = "totop"
+path = "src/tui.rs"
 
 [dependencies]
 prometheus_exporter = "0.8.2"

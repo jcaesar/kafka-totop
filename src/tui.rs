@@ -3,6 +3,7 @@ use chrono::{DateTime, Datelike, Local, Timelike};
 use itertools::Itertools;
 use number_prefix::NumberPrefix;
 use rand::Rng;
+use structopt::StructOpt;
 use std::{
     collections::{hash_map::Entry, BTreeMap, BTreeSet, HashMap, HashSet},
     io,
@@ -23,8 +24,44 @@ use ::tui::{
     widgets::{Axis, Chart, Dataset, GraphType},
     Terminal,
 };
+use rdkafka::ClientConfig as KafkaConfig;
 
-use crate::*;
+/// Are my messages flowing?
+#[derive(StructOpt, Debug)]
+#[structopt(version = "0.1", author = "Julius Michaelis")]
+struct Opts {
+    /// Bootstrap broker address
+    #[structopt(short, long)]
+    brokers: String,
+    /// Additional kafka client options
+    #[structopt(short = "X", long, parse(try_from_str = parseopts))]
+    kafka_options: Vec<(String, String)>,
+
+    /// Polling interval
+    #[structopt(short, long, default_value = "10 s", parse(try_from_str = parsehuman))]
+    interval: Duration,
+
+    /// Metadata retrieval timeout
+    #[structopt(short, long, default_value = "5 s", parse(try_from_str = parsehuman))]
+    timeout: Duration,
+}
+
+fn main() -> Result<()> {
+    run(&Opts::from_args())
+}
+
+fn parseopts(arg: &str) -> Result<(String, String)> {
+    let mut split = arg.splitn(2, '=');
+    if let (Some(k), Some(v), None) = (split.next(), split.next(), split.next()) {
+        Ok((k.to_owned(), v.to_owned()))
+    } else {
+        anyhow::bail!("Expected a parameter of form config.key=value, got {}", arg);
+    }
+}
+
+fn parsehuman(arg: &str) -> Result<Duration> {
+    Ok(arg.parse::<humantime::Duration>().context(format!("Not a parsaeble time: {}", arg))?.into())
+}
 
 #[derive(Default)]
 struct State {
@@ -349,7 +386,7 @@ fn query_offsets(state: Arc<State>, tx: mpsc::SyncSender<Message>, client: Clien
         next += state.query_interval;
 
         let mut query_tasks = BTreeSet::new(); // Better structures exist for scheduling.
-        // TODO: Timeout probably shouldn't be the entire query interval...
+                                               // TODO: Timeout probably shouldn't be the entire query interval...
         match client.fetch_metadata(None, state.query_interval) {
             Ok(metadata) => {
                 let now = Instant::now();
@@ -406,4 +443,17 @@ fn query_offsets(state: Arc<State>, tx: mpsc::SyncSender<Message>, client: Clien
             next = now;
         }
     }
+}
+
+type Client = rdkafka::admin::AdminClient<rdkafka::client::DefaultClientContext>;
+
+fn client(opts: &Opts) -> Result<Client> {
+    let mut config = KafkaConfig::new();
+    config.set("bootstrap.servers", &opts.brokers);
+    for (k, v) in &opts.kafka_options {
+        config.set(k, v);
+    }
+    let client: rdkafka::admin::AdminClient<_> = config.create()
+        .context("Failed to construct client")?;
+    Ok(client)
 }
