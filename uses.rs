@@ -16,14 +16,5 @@ pub use std::{
     time::{Duration, Instant},
 };
 pub use structopt::StructOpt;
-pub use termion::{event::Key, input::TermRead, raw::IntoRawMode, screen::AlternateScreen};
-pub use tui::{
-    backend::TermionBackend,
-    style::{Color, Style},
-    symbols,
-    text::Span,
-    widgets::{Axis, Chart, Dataset, GraphType},
-    Terminal,
-};
 
-pub use crate::{scrape, stats::Stats, ui, Opts};
+pub use crate::{scrape, stats, stats::Stats, ui, Opts};

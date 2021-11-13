@@ -1,3 +1,14 @@
+use termion::{event::Key, input::TermRead, raw::IntoRawMode, screen::AlternateScreen};
+use tui::{
+    backend::TermionBackend,
+    layout::{Constraint, Direction, Layout},
+    style::{Color, Modifier, Style},
+    symbols,
+    text::Span,
+    widgets::{Axis, Chart, Dataset, GraphType, Row, Table},
+    Terminal,
+};
+
 use crate::uses::*;
 
 pub(crate) fn run(opts: &Opts) -> Result<()> {
@@ -12,6 +23,34 @@ pub(crate) fn run(opts: &Opts) -> Result<()> {
     loop {
         scraper.ingest()?;
         terminal.draw(|f| {
+            let chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Min(10), Constraint::Length(46)].as_ref())
+                .split(f.size());
+            let basestats = scraper.basestats().collect::<Vec<_>>();
+            let table = Table::new(basestats.iter().map(
+                |stats::TopicStats {
+                     topic, total, rate, ..
+                 }| {
+                    Row::new(vec![
+                        topic.to_string(),
+                        right_align(format_number(*total as f64), 7),
+                        right_align(rate.map(format_number).unwrap_or_default(), 7),
+                    ])
+                },
+            ))
+            .style(Style::default().fg(Color::White))
+            .header(Row::new(vec!["Topic", "Total", "Per Sec"]).style(Style::default()))
+            .widths(&[
+                Constraint::Length(30),
+                Constraint::Length(7),
+                Constraint::Length(7),
+            ])
+            .column_spacing(1)
+            .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+            .highlight_symbol(">");
+            f.render_widget(table, chunks[1]);
+
             let interval = Duration::from_secs(900); // TODO: CLI option
             let height = f.size().height - 2;
             let width = f.size().width - 7;
@@ -84,7 +123,7 @@ pub(crate) fn run(opts: &Opts) -> Result<()> {
                                 .collect(),
                         ),
                 );
-            f.render_widget(chart, f.size());
+            f.render_widget(chart, chunks[0]);
         })?;
         match userrx.recv_timeout(Duration::from_millis(100)) {
             Ok(Ok(Key::Char('q'))) => break,
@@ -119,8 +158,15 @@ fn format_time(time: DateTime<Local>, long: bool) -> String {
 
 fn format_number(num: f64) -> String {
     match NumberPrefix::decimal(num) {
-        NumberPrefix::Standalone(num) => format!("{:.0}", num),
+        NumberPrefix::Standalone(num) => format!("{:.2}", num),
         NumberPrefix::Prefixed(pfx, num) => format!("{:.2}{}", num, pfx),
+    }
+}
+
+fn right_align(inp: String, len: usize) -> String {
+    match len.checked_sub(inp.len()) {
+        Some(0) | None => inp,
+        Some(fill) => format!("{}{}", " ".repeat(fill), inp),
     }
 }
 

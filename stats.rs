@@ -5,6 +5,13 @@ pub struct Stats {
     offrx: Receiver<scrape::Message>,
 }
 
+pub struct TopicStats<'a> {
+    pub topic: &'a str,
+    pub total: i64,
+    pub seen: i64,
+    pub rate: Option<f64>,
+}
+
 impl Stats {
     pub fn ingesting(offrx: Receiver<scrape::Message>) -> Result<Self, anyhow::Error> {
         Ok(Self {
@@ -37,6 +44,33 @@ impl Stats {
             }
         }
         // TODO: Discard old values
+    }
+    pub fn basestats(&self) -> impl Iterator<Item = TopicStats<'_>> {
+        self.data.iter().map(|(topic, padata)| {
+            let mut seen = 0;
+            let mut total = 0;
+            let mut rate = None;
+            padata
+                .values()
+                .map(|polls| {
+                    let first = polls.values().next()?;
+                    let mut fromback = polls.iter().rev();
+                    let (end, last) = fromback.next()?;
+                    seen += last - first;
+                    total += last;
+                    let (pe, pl) = fromback.next()?;
+                    *rate.get_or_insert(0.) +=
+                        (last - pl) as f64 / end.duration_since(*pe).as_secs_f64();
+                    Some(())
+                })
+                .for_each(|_| ());
+            TopicStats {
+                topic,
+                total,
+                seen,
+                rate,
+            }
+        })
     }
     pub fn rates(
         &self,
