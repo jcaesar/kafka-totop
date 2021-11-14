@@ -9,8 +9,6 @@ name = "totop"
 path = "main.rs"
 
 [dependencies]
-prometheus_exporter = "0.8.2"
-prometheus = { version =  "*", features = ["process"] }
 rdkafka = { version = "0.26.0", features = ["cmake_build"] }
 anyhow = "1.0.44"
 humantime = "2.1.0"
