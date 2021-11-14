@@ -24,8 +24,19 @@ struct QueryTask<'a> {
 
 impl PartialEq for QueryTask<'_> {
     fn eq(&self, other: &Self) -> bool {
-        self.when == other.when && self.topic == other.topic && self.partitions.len() == other.partitions.len() &&
-        self.partitions.iter().zip(other.partitions.iter()).all(|(selb, other)| selb.id() == other.id() && selb.isr() == other.isr() && selb.leader() == other.leader() && selb.replicas() == other.replicas())
+        self.when == other.when
+            && self.topic == other.topic
+            && self.partitions.len() == other.partitions.len()
+            && self
+                .partitions
+                .iter()
+                .zip(other.partitions.iter())
+                .all(|(selb, other)| {
+                    selb.id() == other.id()
+                        && selb.isr() == other.isr()
+                        && selb.leader() == other.leader()
+                        && selb.replicas() == other.replicas()
+                })
     }
 }
 
@@ -47,6 +58,7 @@ impl Ord for QueryTask<'_> {
 pub struct State {
     bad_brokers: Mutex<HashSet<i32>>,
     query_interval: Duration,
+    query_timeout: Duration,
 }
 
 type Client = rdkafka::admin::AdminClient<rdkafka::client::DefaultClientContext>;
@@ -54,6 +66,7 @@ type Client = rdkafka::admin::AdminClient<rdkafka::client::DefaultClientContext>
 pub fn spawn_threads(opts: &Opts) -> Result<Receiver<Message>> {
     let state = Arc::new(State {
         query_interval: opts.scrape_interval,
+        query_timeout: opts.scrape_timeout,
         ..State::default()
     });
     let (offtx, offrx) = mpsc::sync_channel(1_000_000);
@@ -88,8 +101,7 @@ fn query_offsets(state: Arc<State>, tx: mpsc::SyncSender<Message>, client: Clien
         next += state.query_interval;
 
         let mut query_tasks = BTreeSet::new(); // Better structures exist for scheduling.
-                                               // TODO: Timeout probably shouldn't be the entire query interval...
-        let metadata = client.fetch_metadata(None, state.query_interval);
+        let metadata = client.fetch_metadata(None, state.query_timeout);
         match metadata.as_ref() {
             Ok(metadata) => {
                 let now = Instant::now();
@@ -109,6 +121,7 @@ fn query_offsets(state: Arc<State>, tx: mpsc::SyncSender<Message>, client: Clien
         }
 
         let mut bads = state.bad_brokers.lock().expect("poisoned").clone();
+        let mut newbads = Vec::new();
         for QueryTask {
             when,
             topic,
@@ -122,7 +135,7 @@ fn query_offsets(state: Arc<State>, tx: mpsc::SyncSender<Message>, client: Clien
                 if let Some(sleep) = when.checked_duration_since(Instant::now()) {
                     thread::sleep(sleep);
                 }
-                match client.fetch_watermarks(topic, partition.id(), state.query_interval) {
+                match client.fetch_watermarks(topic, partition.id(), state.query_timeout) {
                     Ok((_low, high)) => tx.send(Message::PartitionOffsets {
                         now: Instant::now(),
                         topic: (*topic).into(),
@@ -132,6 +145,7 @@ fn query_offsets(state: Arc<State>, tx: mpsc::SyncSender<Message>, client: Clien
 
                     Err(_) => {
                         bads.insert(partition.leader());
+                        newbads.push(partition.leader())
                     }
                 };
             }
@@ -140,7 +154,12 @@ fn query_offsets(state: Arc<State>, tx: mpsc::SyncSender<Message>, client: Clien
                 topic: (*topic).into(),
             })?;
         }
-        // TODO: actually put bads back
+        {
+            let mut bads = state.bad_brokers.lock().expect("poisoned");
+            for bad in newbads {
+                bads.insert(bad);
+            }
+        }
 
         let now = Instant::now();
         if let Some(sleep) = next.checked_duration_since(now) {
@@ -164,6 +183,7 @@ fn query_bad(state: Arc<State>, client: Client) -> Result<()> {
             .drain()
             .map(|k| (k, false))
             .collect::<HashMap<_, _>>();
+        let mut nowgood = HashSet::new();
         match client.fetch_metadata(None, state.query_interval) {
             Ok(metadata) => {
                 for topic in metadata.topics() {
@@ -178,7 +198,10 @@ fn query_bad(state: Arc<State>, client: Client) -> Result<()> {
                                     partition.id(),
                                     state.query_interval,
                                 ) {
-                                    Ok(_) => entry.remove(),
+                                    Ok(_) => {
+                                        entry.remove();
+                                        nowgood.insert(leader)
+                                    }
                                     Err(_) => entry.insert(true),
                                 };
                             }
@@ -188,8 +211,11 @@ fn query_bad(state: Arc<State>, client: Client) -> Result<()> {
             }
             Err(_) => (),
         }
-        *state.bad_brokers.lock().expect("poisoned") =
-            bads.drain().filter(|(_, v)| *v).map(|(k, _)| k).collect();
+        state
+            .bad_brokers
+            .lock()
+            .expect("poisoned")
+            .retain(|wasbad| !nowgood.contains(wasbad));
 
         let now = Instant::now();
         if let Some(sleep) = next.checked_duration_since(now) {
