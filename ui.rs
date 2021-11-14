@@ -61,7 +61,7 @@ pub(crate) fn run(opts: &Opts) -> Result<()> {
             f.render_widget(chart, chunks[0]);
         })?;
         match userrx.recv_timeout(Duration::from_millis(100)) {
-            Ok(Ok(Key::Char('q'))) => break,
+            Ok(Ok(Key::Char('q'))) | Ok(Ok(Key::Ctrl('c'))) | Ok(Ok(Key::Ctrl('d'))) => break,
             Ok(Ok(_)) => (), // TODO: allow scaling max
             Ok(Err(e)) => Err(e).context("Stdin read error")?,
             Err(mpsc::RecvTimeoutError::Timeout) => (),
