@@ -20,7 +20,10 @@ pub struct TopicStats<'a> {
 }
 
 impl Stats {
-    pub fn ingesting(offrx: Receiver<scrape::Message>, scrape_interval: Duration) -> Result<Self, anyhow::Error> {
+    pub fn ingesting(
+        offrx: Receiver<scrape::Message>,
+        scrape_interval: Duration,
+    ) -> Result<Self, anyhow::Error> {
         Ok(Self {
             offrx,
             data: HashMap::new(),
@@ -45,8 +48,9 @@ impl Stats {
                         .insert(now, offset);
                 }
                 Ok(scrape::Message::RoundFinished { now, topic }) => {
-                    self.data.entry(topic)
-                    .or_insert_with(TopicData::default)
+                    self.data
+                        .entry(topic)
+                        .or_insert_with(TopicData::default)
                         .scraped_interval
                         .get_or_insert((now, now))
                         .1 = now;
@@ -88,64 +92,72 @@ impl Stats {
             }
         })
     }
+
     pub fn rates(
         &self,
-        interval: Duration,
-        buckets: u32,
-    ) -> (f64, Vec<(&str, Vec<(f64, f64)>, i64)>) {
-        let now = Instant::now();
-        let bucket_size = (interval / buckets).as_secs_f64();
-        let draw_start = now - interval;
+        topic: &str,
+        now: Instant,
+        bucket_size: Duration,
+    ) -> Option<Vec<(f64, f64)>> {
         let mut maxv = 1.0f64;
-        let data = self
-            .data
-            .iter()
-            .map(|(topic, padata)| {
-                let mut buckets = (1 - (buckets as i32)..1)
-                    .map(|idx| (bucket_size * idx as f64, 0f64))
-                    .collect::<Vec<_>>();
-                let mut total = 0;
-                for (_, polls) in padata.partitions.iter() {
-                    for ((ai, ao), (bi, bo)) in polls.iter().tuple_windows() {
-                        let diff = bo - ao;
-                        total += diff;
-                        let aedge = ai.checked_duration_since(draw_start);
-                        let bedge = bi.checked_duration_since(draw_start);
-                        let dur = bi.checked_duration_since(*ai);
-                        if let (Some(aedge), Some(bedge), Some(dur)) = (aedge, bedge, dur) {
-                            let aidx = (aedge.as_secs_f64() / bucket_size) as usize;
-                            let bidx = (bedge.as_secs_f64() / bucket_size) as usize;
-                            if aidx == bidx {
-                                if let Some((_, v)) = buckets.get_mut(bidx) {
-                                    *v += diff as f64 / bucket_size;
-                                    maxv = maxv.max(*v);
-                                }
-                            } else {
-                                let rate = diff as f64 / dur.as_secs_f64();
-                                if let Some((_, v)) = buckets.get_mut(aidx) {
-                                    *v += rate
-                                        * ((aidx + 1) as f64 - aedge.as_secs_f64() / bucket_size);
-                                    maxv = maxv.max(*v);
-                                }
-                                if aidx + 1 <= bidx - 1 {
-                                    for (_, v) in buckets[aidx + 1..=bidx - 1].iter_mut() {
-                                        *v += rate;
-                                        maxv = maxv.max(*v);
-                                    }
-                                }
-                                if let Some((_, v)) = buckets.get_mut(bidx) {
-                                    *v += rate * (bedge.as_secs_f64() / bucket_size - bidx as f64);
-                                    maxv = maxv.max(*v);
-                                }
-                            }
-                        }
+        let TopicData {
+            partitions: padata,
+            scraped_interval,
+        } = self.data.get(topic)?;
+        let (scrape_start, scrape_end) = scraped_interval.clone()?;
+        if scrape_start > now {
+            // Just avoid some WTFery
+            return None;
+        }
+        let bucket_size_f = bucket_size.as_secs_f64();
+        let mut buckets = (0..((scrape_end - scrape_start).as_secs_f64() / bucket_size_f) as usize)
+            .map(|idx| {
+                (
+                    bucket_size_f * idx as f64
+                        - ((now - scrape_start) + bucket_size / 2).as_secs_f64(),
+                    0f64,
+                )
+            })
+            .collect::<Vec<_>>();
+        // TODO: tests... :(
+        for (_, polls) in padata.iter() {
+            for ((ai, ao), (bi, bo)) in polls.iter().tuple_windows() {
+                let diff = bo - ao;
+                let aedge = ai.checked_duration_since(scrape_start);
+                let bedge = bi.checked_duration_since(scrape_start);
+                let aidx = aedge.map(|aedge| (aedge.as_secs_f64() / bucket_size_f) as usize);
+                let bidx = bedge.map(|bedge| (bedge.as_secs_f64() / bucket_size_f) as usize);
+                let dur = *bi - *ai;
+                if aidx == bidx {
+                    if let Some((_, v)) = bidx.and_then(|bidx| buckets.get_mut(bidx)) {
+                        *v += diff as f64 / bucket_size_f;
+                        maxv = maxv.max(*v);
+                    }
+                } else {
+                    let rate = diff as f64 / dur.as_secs_f64();
+                    if let Some((_, v)) = aidx.and_then(|aidx| buckets.get_mut(aidx)) {
+                        *v += rate
+                            * ((aidx.unwrap() + 1) as f64
+                                - aedge.unwrap().as_secs_f64() / bucket_size_f);
+                        maxv = maxv.max(*v);
+                    }
+                    let aidx0 = aidx.map(|aidx| aidx + 1).unwrap_or(0);
+                    let bidxm = bidx
+                        .map(|bidx| bidx.saturating_sub(aidx0))
+                        .unwrap_or(usize::MAX);
+                    for (_, v) in buckets.iter_mut().skip(aidx0).take(bidxm) {
+                        *v += rate;
+                        maxv = maxv.max(*v);
+                    }
+                    if let Some((_, v)) = bidx.and_then(|bidx| buckets.get_mut(bidx)) {
+                        *v += rate
+                            * (bedge.unwrap().as_secs_f64() / bucket_size_f - bidx.unwrap() as f64);
+                        maxv = maxv.max(*v);
                     }
                 }
-                (topic.as_str(), buckets, total)
-            })
-            .filter(|(_, _, total)| *total != 0)
-            .collect::<Vec<_>>();
-        (maxv, data)
+            }
+        }
+        Some(buckets)
     }
 
     pub fn discard_before(&mut self, discard: Instant) {

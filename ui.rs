@@ -26,7 +26,7 @@ pub(crate) fn run(opts: &Opts) -> Result<()> {
         if let Some(discard) = Instant::now().checked_sub(opts.draw_interval.mul_f64(1.1)) {
             scraper.discard_before(discard)
         }
-            
+
         terminal.draw(|f| {
             let mut basestats = scraper.basestats().collect::<Vec<_>>();
             basestats.sort_by_key(|s| -s.seen);
@@ -36,6 +36,7 @@ pub(crate) fn run(opts: &Opts) -> Result<()> {
             let mut topdogs = basestats
                 .iter()
                 .take(colors.len())
+                .filter(|s| s.seen > 0)
                 .map(|s| s.topic)
                 .collect::<HashSet<_>>();
             color_assignment.retain(|topic: &String, _| topdogs.contains(topic.as_str()));
@@ -88,22 +89,35 @@ pub(crate) fn run(opts: &Opts) -> Result<()> {
 
             let height = f.size().height - 2;
             let width = f.size().width - 7;
-            let buckets = width as u32 * 2;
             let now_date = Local::now();
-            let (maxv, data) = scraper.rates(opts.draw_interval, buckets);
+            let now = Instant::now();
+            let bucket_size = opts.draw_interval / (width as u32 * 2);
+            let data = basestats
+                .iter()
+                .take(color_assignment.len() * 2) // It's not very meaningful to draw lines we cannot color
+                // stop at some point to avoid too much CPU load
+                .filter(|t| t.seen > 0)
+                .filter_map(|stats::TopicStats { topic, .. }| {
+                    Some((*topic, scraper.rates(topic, now, bucket_size)?))
+                })
+                .collect::<Vec<_>>();
+            let maxv = data
+                .iter()
+                .flat_map(|(_, data)| data.iter().map(|(_, v)| *v))
+                .max_by(|a, b| a.partial_cmp(b).unwrap_or(a.is_nan().cmp(&b.is_nan())))
+                .unwrap_or(1f64);
             if maxy < maxv || maxy > 1.5 * maxv {
                 maxy = maxv * 1.25;
             }
             let data = data
                 .iter()
-                .rev()
-                .map(|(topic, padata, _total)| {
+                .map(|(topic, data)| {
                     Dataset::default()
                         .name(*topic)
                         .marker(symbols::Marker::Braille)
                         .graph_type(GraphType::Line)
                         .style(Style::default().fg(topic_color(topic)))
-                        .data(&padata)
+                        .data(data)
                 })
                 .collect();
             let long_time = opts.draw_interval > Duration::from_secs(3600 * 6);
@@ -123,7 +137,8 @@ pub(crate) fn run(opts: &Opts) -> Result<()> {
                                 .chain((1..=width).step_by(date_length + space).map(|i| {
                                     Span::from(
                                         chrono::Duration::from_std(
-                                            opts.draw_interval.mul_f64(1. - i as f64 / width as f64),
+                                            opts.draw_interval
+                                                .mul_f64(1. - i as f64 / width as f64),
                                         )
                                         .map(|dur: chrono::Duration| {
                                             format_time(now_date - dur, long_time)
