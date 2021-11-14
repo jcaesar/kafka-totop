@@ -1,5 +1,12 @@
 [package]
-name = "totop"
+name = "kafka-totop"
+description = "TUI plotting Kafka message input rates"
+authors = ["Julius Michaelis <gitter@liftm.de>"]
+repository = "https://github.com/jcaesar/kafka-totop"
+categories = ["command-line-utilities"]
+keywords = ["kafka", "tui"]
+readme = "README.md"
+license = "MIT"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.56"
