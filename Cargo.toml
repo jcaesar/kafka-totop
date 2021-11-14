@@ -24,3 +24,7 @@ rand = "0.8.4"
 [build-dependencies]
 # Force version that doesn't use cmake --paralllel
 cmake = "<0.1.46"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
