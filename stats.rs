@@ -1,8 +1,15 @@
 use crate::uses::*;
 
 pub struct Stats {
-    data: HashMap<String, HashMap<i32, BTreeMap<Instant, i64>>>,
+    data: HashMap<String, TopicData>,
     offrx: Receiver<scrape::Message>,
+    scrape_interval: Duration, // This will get more complicated, with per-topic, variable intervals
+}
+
+#[derive(Default)]
+pub struct TopicData {
+    partitions: HashMap<i32, BTreeMap<Instant, i64>>,
+    scraped_interval: Option<(Instant, Instant)>,
 }
 
 pub struct TopicStats<'a> {
@@ -13,10 +20,11 @@ pub struct TopicStats<'a> {
 }
 
 impl Stats {
-    pub fn ingesting(offrx: Receiver<scrape::Message>) -> Result<Self, anyhow::Error> {
+    pub fn ingesting(offrx: Receiver<scrape::Message>, scrape_interval: Duration) -> Result<Self, anyhow::Error> {
         Ok(Self {
             offrx,
             data: HashMap::new(),
+            scrape_interval,
         })
     }
     pub fn ingest(&mut self) -> Result<()> {
@@ -30,10 +38,18 @@ impl Stats {
                 }) => {
                     self.data
                         .entry(topic)
-                        .or_insert_with(HashMap::new)
+                        .or_insert_with(TopicData::default)
+                        .partitions
                         .entry(partition)
                         .or_insert_with(BTreeMap::new)
                         .insert(now, offset);
+                }
+                Ok(scrape::Message::RoundFinished { now, topic }) => {
+                    self.data.entry(topic)
+                    .or_insert_with(TopicData::default)
+                        .scraped_interval
+                        .get_or_insert((now, now))
+                        .1 = now;
                 }
                 Ok(msg) => anyhow::bail!("TODO: handle {:?}", msg),
                 Err(mpsc::TryRecvError::Empty) => return Ok(()),
@@ -50,6 +66,7 @@ impl Stats {
             let mut total = 0;
             let mut rate = None;
             padata
+                .partitions
                 .values()
                 .map(|polls| {
                     let first = polls.values().next()?;
@@ -88,7 +105,7 @@ impl Stats {
                     .map(|idx| (bucket_size * idx as f64, 0f64))
                     .collect::<Vec<_>>();
                 let mut total = 0;
-                for (_, polls) in padata.iter() {
+                for (_, polls) in padata.partitions.iter() {
                     for ((ai, ao), (bi, bo)) in polls.iter().tuple_windows() {
                         let diff = bo - ao;
                         total += diff;
@@ -132,8 +149,12 @@ impl Stats {
     }
 
     pub fn discard_before(&mut self, discard: Instant) {
-        for padata in self.data.values_mut() {
-            for polls in padata.values_mut() {
+        let discard = match discard.checked_sub(self.scrape_interval) {
+            Some(discard) => discard,
+            None => return,
+        };
+        for TopicData { partitions, .. } in self.data.values_mut() {
+            for polls in partitions.values_mut() {
                 while let Some(first) = polls
                     .keys()
                     .next()

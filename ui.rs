@@ -12,7 +12,7 @@ use tui::{
 use crate::uses::*;
 
 pub(crate) fn run(opts: &Opts) -> Result<()> {
-    let mut scraper = Stats::ingesting(scrape::spawn_threads(opts)?)?;
+    let mut scraper = Stats::ingesting(scrape::spawn_threads(opts)?, opts.scrape_interval)?;
     let stdout = std::io::stdout().into_raw_mode()?;
     let stdout = AlternateScreen::from(stdout);
     let backend = TermionBackend::new(stdout);
@@ -26,7 +26,7 @@ pub(crate) fn run(opts: &Opts) -> Result<()> {
         if let Some(discard) = Instant::now().checked_sub(opts.draw_interval.mul_f64(1.1)) {
             scraper.discard_before(discard)
         }
-
+            
         terminal.draw(|f| {
             let mut basestats = scraper.basestats().collect::<Vec<_>>();
             basestats.sort_by_key(|s| -s.seen);
@@ -123,8 +123,7 @@ pub(crate) fn run(opts: &Opts) -> Result<()> {
                                 .chain((1..=width).step_by(date_length + space).map(|i| {
                                     Span::from(
                                         chrono::Duration::from_std(
-                                            opts.draw_interval
-                                                .mul_f64(1. - i as f64 / width as f64),
+                                            opts.draw_interval.mul_f64(1. - i as f64 / width as f64),
                                         )
                                         .map(|dur: chrono::Duration| {
                                             format_time(now_date - dur, long_time)
