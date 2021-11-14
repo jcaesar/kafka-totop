@@ -82,12 +82,11 @@ pub(crate) fn run(opts: &Opts) -> Result<()> {
             .highlight_symbol(">");
             f.render_widget(table, chunks[1]);
 
-            let interval = Duration::from_secs(900); // TODO: CLI option
             let height = f.size().height - 2;
             let width = f.size().width - 7;
             let buckets = width as u32 * 2;
             let now_date = Local::now();
-            let (maxv, data) = scraper.rates(interval, buckets);
+            let (maxv, data) = scraper.rates(opts.draw_interval, buckets);
             if maxy < maxv || maxy > 1.5 * maxv {
                 maxy = maxv * 1.25;
             }
@@ -103,7 +102,7 @@ pub(crate) fn run(opts: &Opts) -> Result<()> {
                         .data(&padata)
                 })
                 .collect();
-            let long_time = interval > Duration::from_secs(3600 * 6);
+            let long_time = opts.draw_interval > Duration::from_secs(3600 * 6);
             let date_length = match long_time {
                 true => 19,
                 false => 8,
@@ -114,13 +113,13 @@ pub(crate) fn run(opts: &Opts) -> Result<()> {
                 .x_axis(
                     Axis::default()
                         .style(Style::default().fg(Color::White))
-                        .bounds([-interval.as_secs_f64(), 0.0])
+                        .bounds([-opts.draw_interval.as_secs_f64(), 0.0])
                         .labels(
                             once(Span::from(""))
                                 .chain((1..=width).step_by(date_length + space).map(|i| {
                                     Span::from(
                                         chrono::Duration::from_std(
-                                            interval.mul_f64(1. - i as f64 / width as f64),
+                                            opts.draw_interval.mul_f64(1. - i as f64 / width as f64),
                                         )
                                         .map(|dur: chrono::Duration| {
                                             format_time(now_date - dur, long_time)

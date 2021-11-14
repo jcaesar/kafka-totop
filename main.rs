@@ -16,13 +16,16 @@ pub struct Opts {
     #[structopt(short = "X", long, parse(try_from_str = parseopts))]
     kafka_options: Vec<(String, String)>,
 
+    /// Length of history to draw as graph
+    #[structopt(short, long, default_value = "15 min", parse(try_from_str = parsehuman))]
+    draw_interval: Duration,
+
     /// Polling interval
     #[structopt(short, long, default_value = "10 s", parse(try_from_str = parsehuman))]
-    interval: Duration,
-
+    scrape_interval: Duration,
     /// Metadata retrieval timeout
-    #[structopt(short, long, default_value = "5 s", parse(try_from_str = parsehuman))]
-    timeout: Duration,
+    #[structopt(short = "T", long, default_value = "5 s", parse(try_from_str = parsehuman))]
+    scrape_timeout: Duration,
 }
 
 fn parseopts(arg: &str) -> Result<(String, String)> {

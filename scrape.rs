@@ -30,7 +30,7 @@ type Client = rdkafka::admin::AdminClient<rdkafka::client::DefaultClientContext>
 
 pub fn spawn_threads(opts: &Opts) -> Result<Receiver<Message>> {
     let state = Arc::new(State {
-        query_interval: opts.interval,
+        query_interval: opts.scrape_interval,
         ..State::default()
     });
     let (offtx, offrx) = mpsc::sync_channel(1_000_000);
