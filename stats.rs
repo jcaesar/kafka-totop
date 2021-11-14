@@ -43,7 +43,6 @@ impl Stats {
                 }
             }
         }
-        // TODO: Discard old values
     }
     pub fn basestats(&self) -> impl Iterator<Item = TopicStats<'_>> {
         self.data.iter().map(|(topic, padata)| {
@@ -130,5 +129,20 @@ impl Stats {
             .filter(|(_, _, total)| *total != 0)
             .collect::<Vec<_>>();
         (maxv, data)
+    }
+
+    pub fn discard_before(&mut self, discard: Instant) {
+        for padata in self.data.values_mut() {
+            for polls in padata.values_mut() {
+                while let Some(first) = polls
+                    .keys()
+                    .next()
+                    .map(Clone::clone)
+                    .filter(|t| t < &discard)
+                {
+                    polls.remove(&first);
+                }
+            }
+        }
     }
 }
