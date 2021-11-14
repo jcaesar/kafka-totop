@@ -5,6 +5,7 @@ pub use number_prefix::NumberPrefix;
 pub use rand::Rng;
 pub use rdkafka::{metadata::MetadataPartition, ClientConfig as KafkaConfig};
 pub use std::{
+    cmp,
     collections::{hash_map::Entry, BTreeMap, BTreeSet, HashMap, HashSet},
     io,
     iter::once,
@@ -17,4 +18,4 @@ pub use std::{
 };
 pub use structopt::StructOpt;
 
-pub use crate::{scrape, stats, stats::Stats, ui, Opts};
+pub use crate::{colors::ColorAssignment, scrape, stats, stats::Stats, ui, Opts};

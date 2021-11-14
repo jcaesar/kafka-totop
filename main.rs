@@ -1,3 +1,4 @@
+pub mod colors;
 pub mod scrape;
 pub mod stats;
 pub mod ui;
