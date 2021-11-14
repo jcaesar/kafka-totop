@@ -29,7 +29,7 @@ pub(crate) fn run(opts: &Opts) -> Result<()> {
 
         terminal.draw(|f| {
             let mut basestats = scraper.basestats().collect::<Vec<_>>();
-            basestats.sort_by_key(|s| -s.seen);
+            basestats.sort_by_key(|s| (-s.seen, -s.total));
             let basestats = basestats;
 
             let mut colors = LineColor::all_variants();
