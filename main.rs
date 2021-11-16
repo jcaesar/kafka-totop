@@ -4,6 +4,7 @@ pub mod stats;
 pub mod ui;
 pub mod uses;
 
+use crossterm::terminal::disable_raw_mode;
 use uses::*;
 
 /// Are my messages flowing?
@@ -46,5 +47,16 @@ fn parsehuman(arg: &str) -> Result<Duration> {
 }
 
 fn main() -> Result<()> {
-    ui::run(&Opts::from_args())
+    let opts = Opts::from_args();
+    let scrape = scrape::spawn_threads(&opts);
+    let stats = Stats::ingesting(scrape?, opts.scrape_interval)?;
+    std::panic::set_hook(Box::new(move |info| {
+        disable_raw_mode().ok();
+        better_panic::Settings::new().create_panic_handler()(info);
+    }));
+    let res = ui::run(&opts, stats);
+    let dis = disable_raw_mode();
+    res?;
+    dis?;
+    Ok(())
 }

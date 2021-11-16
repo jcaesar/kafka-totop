@@ -1,6 +1,9 @@
-use termion::{event::Key, input::TermRead, raw::IntoRawMode, screen::AlternateScreen};
+use crossterm::{
+    event::{self, KeyCode, KeyModifiers},
+    terminal::enable_raw_mode,
+};
 use tui::{
-    backend::TermionBackend,
+    backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     symbols,
@@ -11,14 +14,12 @@ use tui::{
 
 use crate::uses::*;
 
-pub(crate) fn run(opts: &Opts) -> Result<()> {
-    let mut scraper = Stats::ingesting(scrape::spawn_threads(opts)?, opts.scrape_interval)?;
-    let stdout = std::io::stdout().into_raw_mode()?;
-    let stdout = AlternateScreen::from(stdout);
-    let backend = TermionBackend::new(stdout);
+pub(crate) fn run(opts: &Opts, mut scraper: Stats) -> Result<()> {
+    enable_raw_mode()?;
+    let stdout = io::stdout();
+    let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
-    let (usertx, userrx) = mpsc::sync_channel(1000);
-    thread::spawn(|| input(usertx));
+    terminal.clear()?;
     let mut maxy = 1.0f64;
     let mut color_assignment = ColorAssignment::new();
     loop {
@@ -60,12 +61,19 @@ pub(crate) fn run(opts: &Opts) -> Result<()> {
             );
             f.render_widget(chart, chunks[0]);
         })?;
-        match userrx.recv_timeout(Duration::from_millis(100)) {
-            Ok(Ok(Key::Char('q'))) | Ok(Ok(Key::Ctrl('c'))) | Ok(Ok(Key::Ctrl('d'))) => break,
-            Ok(Ok(_)) => (), // TODO: allow scaling max
-            Ok(Err(e)) => Err(e).context("Stdin read error")?,
-            Err(mpsc::RecvTimeoutError::Timeout) => (),
-            Err(mpsc::RecvTimeoutError::Disconnected) => anyhow::bail!("stdin watcher died"), // TODO: poll thread join
+        if event::poll(Duration::from_millis(100))? {
+            match event::read() {
+                Ok(event::Event::Key(event::KeyEvent { code, modifiers })) => {
+                    match (code, modifiers) {
+                        (KeyCode::Char('q'), _) => break,
+                        (KeyCode::Char('c'), KeyModifiers::CONTROL) => break,
+                        (KeyCode::Char('d'), KeyModifiers::CONTROL) => break,
+                        (_, _) => (),
+                    }
+                }
+                Ok(_) => (), // Redraw
+                Err(e) => Err(e).context("input error")?,
+            }
         }
     }
     Ok(())
@@ -219,11 +227,4 @@ fn right_align(inp: String, len: usize) -> String {
         Some(0) | None => inp,
         Some(fill) => format!("{}{}", " ".repeat(fill), inp),
     }
-}
-
-fn input(usertx: mpsc::SyncSender<Result<Key, io::Error>>) -> Result<()> {
-    for evt in io::stdin().keys() {
-        usertx.send(evt).context("Send fail")?;
-    }
-    anyhow::bail!("Unexpected input closed");
 }
