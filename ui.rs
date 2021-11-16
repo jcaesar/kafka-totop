@@ -4,11 +4,11 @@ use crossterm::{
 };
 use tui::{
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
+    layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     symbols,
-    text::Span,
-    widgets::{Axis, Cell, Chart, Dataset, GraphType, Row, Table},
+    text::{Span, Spans},
+    widgets::{Axis, Cell, Chart, Dataset, GraphType, Paragraph, Row, Table},
     Terminal,
 };
 
@@ -41,25 +41,33 @@ pub(crate) fn run(opts: &Opts, mut scraper: Stats) -> Result<()> {
 
             f.render_widget(mk_table(&basestats, &color_assignment), chunks[1]);
 
-            let width = f.size().width - 46 - 9;
-            let height = f.size().height - 2;
-            let bucket_size = opts.draw_interval / (width as u32 * 2);
-            let (now_date, data) = mk_chart_data(
-                bucket_size,
-                &basestats[..cmp::min(basestats.len(), color_assignment.len())],
-                &scraper,
-                &mut maxy,
-            );
-            let chart = mk_chart(
-                width,
-                height,
-                &data,
-                now_date,
-                opts.draw_interval,
-                &color_assignment,
-                maxy,
-            );
-            f.render_widget(chart, chunks[0]);
+            let width = chunks[0].width.saturating_sub(9);
+            let height = chunks[0].height.saturating_sub(2);
+            if cmp::min(width, height) <= 2 {
+                f.render_widget(
+                    Paragraph::new(vec![Spans::from("too small"); chunks[0].height as usize])
+                        .alignment(Alignment::Center),
+                    chunks[0],
+                );
+            } else {
+                let bucket_size = opts.draw_interval / (width as u32 * 2);
+                let (now_date, data) = mk_chart_data(
+                    bucket_size,
+                    &basestats[..cmp::min(basestats.len(), color_assignment.len())],
+                    &scraper,
+                    &mut maxy,
+                );
+                let chart = mk_chart(
+                    width,
+                    height,
+                    &data,
+                    now_date,
+                    opts.draw_interval,
+                    &color_assignment,
+                    maxy,
+                );
+                f.render_widget(chart, chunks[0]);
+            }
         })?;
         if event::poll(Duration::from_millis(100))? {
             match event::read() {
@@ -105,6 +113,7 @@ fn mk_chart<'a>(
         false => 8,
     };
     let space = 5;
+    let maxl = cmp::max(height / 10, 1);
     let chart = Chart::new(data)
         .hidden_legend_constraints((Constraint::Percentage(0), Constraint::Percentage(0)))
         .x_axis(
@@ -131,8 +140,8 @@ fn mk_chart<'a>(
                 .style(Style::default().fg(Color::White))
                 .bounds([0.0, maxy])
                 .labels(
-                    (0..=height / 10)
-                        .map(|p| Span::from(format_number(p as f64 / (height / 10) as f64 * maxy)))
+                    (0..=maxl)
+                        .map(|p| Span::from(format_number(p as f64 / maxl as f64 * maxy)))
                         .collect(),
                 ),
         );
