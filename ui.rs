@@ -8,7 +8,7 @@ use tui::{
     style::{Color, Modifier, Style},
     symbols,
     text::{Span, Spans},
-    widgets::{Axis, Cell, Chart, Dataset, GraphType, Paragraph, Row, Table},
+    widgets::{Axis, Cell, Chart, Dataset, GraphType, Paragraph, Row, Table, Wrap},
     Terminal,
 };
 
@@ -34,10 +34,29 @@ pub(crate) fn run(opts: &Opts, mut scraper: Stats) -> Result<()> {
             let basestats = basestats;
             color_assignment.compute(&basestats);
 
+            let content_box;
+            if let Some(err) = scraper.metadata_error.as_ref() {
+                let text = vec![Spans::from(vec![Span::styled(
+                    err.to_string(),
+                    Style::default().fg(Color::Red),
+                )])];
+                let paragraph = Paragraph::new(text)
+                    .alignment(Alignment::Center)
+                    .wrap(Wrap { trim: true });
+                let chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Min(2), Constraint::Length(1)].as_ref())
+                    .split(f.size());
+                f.render_widget(paragraph, chunks[1]);
+                content_box = chunks[0];
+            } else {
+                content_box = f.size();
+            }
+
             let chunks = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Min(10), Constraint::Length(46)].as_ref())
-                .split(f.size());
+                .split(content_box);
 
             f.render_widget(mk_table(&basestats, &color_assignment), chunks[1]);
 
@@ -57,16 +76,27 @@ pub(crate) fn run(opts: &Opts, mut scraper: Stats) -> Result<()> {
                     &scraper,
                     &mut maxy,
                 );
-                let chart = mk_chart(
-                    width,
-                    height,
-                    &data,
-                    now_date,
-                    opts.draw_interval,
-                    &color_assignment,
-                    maxy,
-                );
-                f.render_widget(chart, chunks[0]);
+                if data.len() > 0 {
+                    let chart = mk_chart(
+                        width,
+                        height,
+                        &data,
+                        now_date,
+                        opts.draw_interval,
+                        &color_assignment,
+                        maxy,
+                    );
+                    f.render_widget(chart, chunks[0]);
+                } else {
+                    let text = vec![Spans::from(vec![Span::styled(
+                        "[gathering data to plot]",
+                        Style::default().fg(Color::Green),
+                    )])];
+                    let paragraph = Paragraph::new(text)
+                        .alignment(Alignment::Center)
+                        .wrap(Wrap { trim: true });
+                    f.render_widget(paragraph, chunks[0])
+                }
             }
         })?;
         if event::poll(Duration::from_millis(100))? {

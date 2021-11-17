@@ -4,6 +4,7 @@ pub struct Stats {
     data: HashMap<String, TopicData>,
     offrx: Receiver<scrape::Message>,
     scrape_interval: Duration, // This will get more complicated, with per-topic, variable intervals
+    pub metadata_error: Option<KafkaError>,
 }
 
 #[derive(Default)]
@@ -28,6 +29,7 @@ impl Stats {
             offrx,
             data: HashMap::new(),
             scrape_interval,
+            metadata_error: None,
         })
     }
     pub fn ingest(&mut self) -> Result<()> {
@@ -54,7 +56,9 @@ impl Stats {
                         .scraped_interval
                         .get_or_insert((now, now))
                         .1 = now;
+                    self.metadata_error = None;
                 }
+                Ok(scrape::Message::MetadataQueryFail(err)) => self.metadata_error = Some(err),
                 Ok(msg) => anyhow::bail!("TODO: handle {:?}", msg),
                 Err(mpsc::TryRecvError::Empty) => return Ok(()),
                 Err(mpsc::TryRecvError::Disconnected) => {

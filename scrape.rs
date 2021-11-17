@@ -2,7 +2,7 @@ use crate::uses::*;
 
 #[derive(Debug)]
 pub enum Message {
-    MetadataQueryFail,
+    MetadataQueryFail(KafkaError),
     BrokerQueryFail(String),
     PartitionOffsets {
         now: Instant,
@@ -117,7 +117,7 @@ fn query_offsets(state: Arc<State>, tx: mpsc::SyncSender<Message>, client: Clien
                     });
                 }
             }
-            Err(_) => (), // TODO?
+            Err(err) => tx.send(Message::MetadataQueryFail(err.clone()))?,
         }
 
         let mut bads = state.bad_brokers.lock().expect("poisoned").clone();
