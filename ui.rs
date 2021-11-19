@@ -22,90 +22,95 @@ pub(crate) fn run(opts: &Opts, mut scraper: Stats) -> Result<()> {
     terminal.clear()?;
     let mut maxy = 1.0f64;
     let mut color_assignment = ColorAssignment::new();
+    let mut redraw = true;
     loop {
-        scraper.ingest()?;
+        redraw |= scraper.ingest()?;
         if let Some(discard) = Instant::now().checked_sub(opts.draw_interval.mul_f64(1.1)) {
             scraper.discard_before(discard)
         }
 
-        terminal.draw(|f| {
-            let mut basestats = scraper.basestats().collect::<Vec<_>>();
-            basestats.sort_by_key(|s| (-s.seen, -s.total));
-            let basestats = basestats;
-            color_assignment.compute(&basestats);
+        if redraw {
+            redraw = false;
+            terminal.draw(|f| {
+                let mut basestats = scraper.basestats().collect::<Vec<_>>();
+                basestats.sort_by_key(|s| (-s.seen, -s.total));
+                let basestats = basestats;
+                color_assignment.compute(&basestats);
 
-            let content_box;
-            if let Some(err) = scraper.metadata_error.as_ref() {
-                let text = vec![Spans::from(vec![Span::styled(
-                    err.to_string(),
-                    Style::default().fg(Color::Red),
-                )])];
-                let paragraph = Paragraph::new(text)
-                    .alignment(Alignment::Center)
-                    .wrap(Wrap { trim: true });
-                let chunks = Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints([Constraint::Min(2), Constraint::Length(1)])
-                    .split(f.size());
-                f.render_widget(paragraph, chunks[1]);
-                content_box = chunks[0];
-            } else {
-                content_box = f.size();
-            }
-
-            let chunks = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Min(10), Constraint::Length(46)])
-                .split(content_box);
-
-            f.render_widget(mk_table(&basestats, &color_assignment), chunks[1]);
-
-            let width = chunks[0].width.saturating_sub(9);
-            let height = chunks[0].height.saturating_sub(2);
-            if cmp::min(width, height) <= 2 {
-                f.render_widget(
-                    Paragraph::new(vec![Spans::from("too small"); chunks[0].height as usize])
-                        .alignment(Alignment::Center),
-                    chunks[0],
-                );
-            } else {
-                let bucket_size = opts.draw_interval / (width as u32 * 2);
-                let (now_date, data) = mk_chart_data(
-                    bucket_size,
-                    &basestats[..cmp::min(basestats.len(), color_assignment.len())],
-                    &scraper,
-                    &mut maxy,
-                );
-                if data.len() > 0 {
-                    let chart = mk_chart(
-                        width,
-                        height,
-                        &data,
-                        now_date,
-                        opts.draw_interval,
-                        &color_assignment,
-                        maxy,
-                    );
-                    f.render_widget(chart, chunks[0]);
-                } else {
-                    let text = vec![Spans::from(vec![Span::raw("[no plottable data]")])];
+                let content_box;
+                if let Some(err) = scraper.metadata_error.as_ref() {
+                    let text = vec![Spans::from(vec![Span::styled(
+                        err.to_string(),
+                        Style::default().fg(Color::Red),
+                    )])];
                     let paragraph = Paragraph::new(text)
                         .alignment(Alignment::Center)
-                        .block(Block::default())
                         .wrap(Wrap { trim: true });
-                    let vsplit_chunks = Layout::default()
+                    let chunks = Layout::default()
                         .direction(Direction::Vertical)
-                        .constraints([
-                            Constraint::Percentage(50),
-                            Constraint::Min(1),
-                            Constraint::Percentage(50),
-                        ])
-                        .split(chunks[0]);
-                    f.render_widget(paragraph, vsplit_chunks[1])
+                        .constraints([Constraint::Min(2), Constraint::Length(1)])
+                        .split(f.size());
+                    f.render_widget(paragraph, chunks[1]);
+                    content_box = chunks[0];
+                } else {
+                    content_box = f.size();
                 }
-            }
-        })?;
+
+                let chunks = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Min(10), Constraint::Length(46)])
+                    .split(content_box);
+
+                f.render_widget(mk_table(&basestats, &color_assignment), chunks[1]);
+
+                let width = chunks[0].width.saturating_sub(9);
+                let height = chunks[0].height.saturating_sub(2);
+                if cmp::min(width, height) <= 2 {
+                    f.render_widget(
+                        Paragraph::new(vec![Spans::from("too small"); chunks[0].height as usize])
+                            .alignment(Alignment::Center),
+                        chunks[0],
+                    );
+                } else {
+                    let bucket_size = opts.draw_interval / (width as u32 * 2);
+                    let (now_date, data) = mk_chart_data(
+                        bucket_size,
+                        &basestats[..cmp::min(basestats.len(), color_assignment.len())],
+                        &scraper,
+                        &mut maxy,
+                    );
+                    if data.len() > 0 {
+                        let chart = mk_chart(
+                            width,
+                            height,
+                            &data,
+                            now_date,
+                            opts.draw_interval,
+                            &color_assignment,
+                            maxy,
+                        );
+                        f.render_widget(chart, chunks[0]);
+                    } else {
+                        let text = vec![Spans::from(vec![Span::raw("[no plottable data]")])];
+                        let paragraph = Paragraph::new(text)
+                            .alignment(Alignment::Center)
+                            .block(Block::default())
+                            .wrap(Wrap { trim: true });
+                        let vsplit_chunks = Layout::default()
+                            .direction(Direction::Vertical)
+                            .constraints([
+                                Constraint::Percentage(50),
+                                Constraint::Min(1),
+                                Constraint::Percentage(50),
+                            ])
+                            .split(chunks[0]);
+                        f.render_widget(paragraph, vsplit_chunks[1])
+                    }
+                }
+            })?;
+        }
         if event::poll(Duration::from_millis(100))? {
+            redraw = true;
             match event::read() {
                 Ok(event::Event::Key(event::KeyEvent { code, modifiers })) => {
                     match (code, modifiers) {

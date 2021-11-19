@@ -32,7 +32,8 @@ impl Stats {
             metadata_error: None,
         })
     }
-    pub fn ingest(&mut self) -> Result<()> {
+    pub fn ingest(&mut self) -> Result<bool> {
+        let mut update_display = false;
         loop {
             match self.offrx.try_recv() {
                 Ok(scrape::Message::PartitionOffsets {
@@ -57,10 +58,14 @@ impl Stats {
                         .get_or_insert((now, now))
                         .1 = now;
                     self.metadata_error = None;
+                    update_display = true;
                 }
-                Ok(scrape::Message::MetadataQueryFail(err)) => self.metadata_error = Some(err),
+                Ok(scrape::Message::MetadataQueryFail(err)) => {
+                    self.metadata_error = Some(err);
+                    update_display = true;
+                }
                 Ok(msg) => anyhow::bail!("TODO: handle {:?}", msg),
-                Err(mpsc::TryRecvError::Empty) => return Ok(()),
+                Err(mpsc::TryRecvError::Empty) => return Ok(update_display),
                 Err(mpsc::TryRecvError::Disconnected) => {
                     // TODO: poll thread exit for an error for a second or so
                     anyhow::bail!("Metadata gatherer bailed");
