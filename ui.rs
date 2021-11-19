@@ -8,7 +8,7 @@ use tui::{
     style::{Color, Modifier, Style},
     symbols,
     text::{Span, Spans},
-    widgets::{Axis, Cell, Chart, Dataset, GraphType, Paragraph, Row, Table, Wrap},
+    widgets::{Axis, Block, Cell, Chart, Dataset, GraphType, Paragraph, Row, Table, Wrap},
     Terminal,
 };
 
@@ -45,7 +45,7 @@ pub(crate) fn run(opts: &Opts, mut scraper: Stats) -> Result<()> {
                     .wrap(Wrap { trim: true });
                 let chunks = Layout::default()
                     .direction(Direction::Vertical)
-                    .constraints([Constraint::Min(2), Constraint::Length(1)].as_ref())
+                    .constraints([Constraint::Min(2), Constraint::Length(1)])
                     .split(f.size());
                 f.render_widget(paragraph, chunks[1]);
                 content_box = chunks[0];
@@ -55,7 +55,7 @@ pub(crate) fn run(opts: &Opts, mut scraper: Stats) -> Result<()> {
 
             let chunks = Layout::default()
                 .direction(Direction::Horizontal)
-                .constraints([Constraint::Min(10), Constraint::Length(46)].as_ref())
+                .constraints([Constraint::Min(10), Constraint::Length(46)])
                 .split(content_box);
 
             f.render_widget(mk_table(&basestats, &color_assignment), chunks[1]);
@@ -88,14 +88,20 @@ pub(crate) fn run(opts: &Opts, mut scraper: Stats) -> Result<()> {
                     );
                     f.render_widget(chart, chunks[0]);
                 } else {
-                    let text = vec![Spans::from(vec![Span::styled(
-                        "[gathering data to plot]",
-                        Style::default().fg(Color::Green),
-                    )])];
+                    let text = vec![Spans::from(vec![Span::raw("[no plottable data]")])];
                     let paragraph = Paragraph::new(text)
                         .alignment(Alignment::Center)
+                        .block(Block::default())
                         .wrap(Wrap { trim: true });
-                    f.render_widget(paragraph, chunks[0])
+                    let vsplit_chunks = Layout::default()
+                        .direction(Direction::Vertical)
+                        .constraints([
+                            Constraint::Percentage(50),
+                            Constraint::Min(1),
+                            Constraint::Percentage(50),
+                        ])
+                        .split(chunks[0]);
+                    f.render_widget(paragraph, vsplit_chunks[1])
                 }
             }
         })?;
