@@ -18,4 +18,9 @@ pub use std::{
 };
 pub use structopt::StructOpt;
 
-pub use crate::{colors::ColorAssignment, scrape, stats, stats::Stats, ui, Opts};
+pub use crate::{
+    colors::ColorAssignment,
+    scrape, stats,
+    stats::{Stats, Topic},
+    ui, Opts,
+};

@@ -1,22 +1,37 @@
 use crate::uses::*;
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Topic {
+    pub name: String,
+    // The idea here is that I often test stuff in docker containers, and tend to delete those and start afresh quite often
+    // That results in several unrelated instances of a topic with the same name.
+    pub stat_idx: usize,
+}
+
 pub struct Stats {
-    data: HashMap<String, TopicData>,
+    data: HashMap<String, Vec<TopicData>>,
     offrx: Receiver<scrape::Message>,
     scrape_interval: Duration, // This will get more complicated, with per-topic, variable intervals
     pub metadata_error: Option<KafkaError>,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct TopicData {
     partitions: HashMap<i32, BTreeMap<Instant, i64>>,
     scraped_interval: Option<(Instant, Instant)>,
+    decreased: usize,
+    scraped: usize,
 }
 
-pub struct TopicStats<'a> {
-    pub topic: &'a str,
+#[derive(Debug)]
+pub struct TopicStats {
+    /// Topic name
+    pub topic: Topic,
+    /// Sum of high watermarks
     pub total: i64,
+    /// Difference of first and last sum of high watermarks
     pub seen: i64,
+    /// seen / scrape_interval
     pub rate: Option<f64>,
 }
 
@@ -42,23 +57,41 @@ impl Stats {
                     offset,
                     now,
                 }) => {
-                    self.data
+                    let mut topdata = self
+                        .data
                         .entry(topic)
-                        .or_insert_with(TopicData::default)
-                        .partitions
-                        .entry(partition)
-                        .or_insert_with(BTreeMap::new)
-                        .insert(now, offset);
+                        .or_insert_with(|| Vec::with_capacity(1))
+                        .back_or_push();
+                    let partdata = topdata.partitions.entry(partition);
+                    let decreased = match &partdata {
+                        Entry::Occupied(partdata) => match partdata.get().values().rev().next() {
+                            Some(latest) => *latest > offset,
+                            None => false,
+                        },
+                        Entry::Vacant(_) => false,
+                    };
+                    if !decreased {
+                        partdata.or_insert_with(BTreeMap::new).insert(now, offset);
+                    } else {
+                        topdata.decreased += 1;
+                    }
+                    topdata.scraped += 1;
                 }
                 Ok(scrape::Message::RoundFinished { now, topic }) => {
-                    self.data
-                        .entry(topic)
-                        .or_insert_with(TopicData::default)
-                        .scraped_interval
-                        .get_or_insert((now, now))
-                        .1 = now;
-                    self.metadata_error = None;
-                    update_display = true;
+                    let topdatas = self.data.entry(topic).or_insert_with(Vec::default);
+                    let topdata = topdatas.back_or_push();
+                    if topdata.scraped > 0 {
+                        if topdata.decreased <= topdata.partitions.len() / 2 {
+                            topdata.scraped_interval.get_or_insert((now, now)).1 = now;
+                            topdata.decreased = 0;
+                            topdata.scraped = 0;
+                            self.metadata_error = None;
+                            update_display = true;
+                        } else {
+                            // This means we lose the first set of offsets if the topics were reset. Whatev.
+                            topdatas.push(TopicData::default())
+                        }
+                    }
                 }
                 Ok(scrape::Message::MetadataQueryFail(err)) => {
                     self.metadata_error = Some(err);
@@ -73,38 +106,43 @@ impl Stats {
             }
         }
     }
-    pub fn basestats(&self) -> impl Iterator<Item = TopicStats<'_>> {
-        self.data.iter().map(|(topic, padata)| {
-            let mut seen = 0;
-            let mut total = 0;
-            let mut rate = None;
-            padata
-                .partitions
-                .values()
-                .map(|polls| {
-                    let first = polls.values().next()?;
-                    let mut fromback = polls.iter().rev();
-                    let (end, last) = fromback.next()?;
-                    seen += last - first;
-                    total += last;
-                    let (pe, pl) = fromback.next()?;
-                    *rate.get_or_insert(0.) +=
-                        (last - pl) as f64 / end.duration_since(*pe).as_secs_f64();
-                    Some(())
-                })
-                .for_each(|_| ());
-            TopicStats {
-                topic,
-                total,
-                seen,
-                rate,
-            }
+    pub fn basestats(&self) -> impl '_ + Iterator<Item = TopicStats> {
+        self.data.iter().flat_map(|(topic, padata)| {
+            padata.iter().rev().enumerate().map(|(idx, padata)| {
+                let mut seen = 0;
+                let mut total = 0;
+                let mut rate = None;
+                padata
+                    .partitions
+                    .values()
+                    .map(|polls| {
+                        let first = polls.values().next()?;
+                        let mut fromback = polls.iter().rev();
+                        let (end, last) = fromback.next()?;
+                        seen += last - first;
+                        total += last;
+                        let (pe, pl) = fromback.next()?;
+                        *rate.get_or_insert(0.) +=
+                            (last - pl) as f64 / end.duration_since(*pe).as_secs_f64();
+                        Some(())
+                    })
+                    .for_each(|_| ());
+                TopicStats {
+                    topic: Topic {
+                        name: topic.to_owned(),
+                        stat_idx: idx,
+                    },
+                    total,
+                    seen,
+                    rate,
+                }
+            })
         })
     }
 
     pub fn rates(
         &self,
-        topic: &str,
+        topic: &Topic,
         now: Instant,
         bucket_size: Duration,
     ) -> Option<Vec<(f64, f64)>> {
@@ -112,7 +150,13 @@ impl Stats {
         let TopicData {
             partitions: padata,
             scraped_interval,
-        } = self.data.get(topic)?;
+            ..
+        } = self
+            .data
+            .get(&topic.name)?
+            .iter()
+            .rev()
+            .nth(topic.stat_idx)?;
         let (scrape_start, scrape_end) = scraped_interval.clone()?;
         if scrape_start > now {
             // Just avoid some WTFery
@@ -174,17 +218,35 @@ impl Stats {
             Some(discard) => discard,
             None => return,
         };
-        for TopicData { partitions, .. } in self.data.values_mut() {
-            for polls in partitions.values_mut() {
-                while let Some(first) = polls
-                    .keys()
-                    .next()
-                    .map(Clone::clone)
-                    .filter(|t| t < &discard)
-                {
-                    polls.remove(&first);
+        for padatas in self.data.values_mut() {
+            for TopicData { partitions, .. } in padatas {
+                for polls in partitions.values_mut() {
+                    while let Some(first) = polls
+                        .keys()
+                        .next()
+                        .map(Clone::clone)
+                        .filter(|t| t < &discard)
+                    {
+                        polls.remove(&first);
+                    }
                 }
             }
         }
+    }
+}
+
+trait BackOrPush {
+    type Element;
+    fn back_or_push(&mut self) -> &mut Self::Element;
+}
+
+impl<T: Default> BackOrPush for Vec<T> {
+    type Element = T;
+
+    fn back_or_push(&mut self) -> &mut Self::Element {
+        if self.len() == 0 {
+            self.push(Default::default());
+        }
+        self.iter_mut().rev().next().unwrap()
     }
 }

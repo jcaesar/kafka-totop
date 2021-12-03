@@ -33,7 +33,7 @@ pub(crate) fn run(opts: &Opts, mut scraper: Stats) -> Result<()> {
             redraw = false;
             terminal.draw(|f| {
                 let mut basestats = scraper.basestats().collect::<Vec<_>>();
-                basestats.sort_by_key(|s| (-s.seen, -s.total));
+                basestats.sort_by_key(|s| (s.topic.stat_idx, cmp::Reverse((s.seen, s.total))));
                 let basestats = basestats;
                 color_assignment.compute(&basestats);
 
@@ -131,7 +131,7 @@ pub(crate) fn run(opts: &Opts, mut scraper: Stats) -> Result<()> {
 fn mk_chart<'a>(
     width: u16,
     height: u16,
-    data: &'a [(&'a str, Vec<(f64, f64)>)],
+    data: &'a [(&'a Topic, Vec<(f64, f64)>)],
     now_date: DateTime<Local>,
     draw_interval: Duration,
     color_assignment: &ColorAssignment,
@@ -141,7 +141,7 @@ fn mk_chart<'a>(
         .iter()
         .map(|(topic, data)| {
             Dataset::default()
-                .name(*topic)
+                .name(topic.name.to_owned())
                 .marker(symbols::Marker::Braille)
                 .graph_type(GraphType::Line)
                 .style(Style::default().fg(color_assignment.get(topic)))
@@ -194,14 +194,14 @@ fn mk_chart_data<'a>(
     basestats: &'a [stats::TopicStats],
     scraper: &Stats,
     maxy: &mut f64,
-) -> (DateTime<Local>, Vec<(&'a str, Vec<(f64, f64)>)>) {
+) -> (DateTime<Local>, Vec<(&'a Topic, Vec<(f64, f64)>)>) {
     let now_date = Local::now();
     let now = Instant::now();
     let data = basestats
         .iter()
         .filter(|t| t.seen > 0)
         .filter_map(|stats::TopicStats { topic, .. }| {
-            Some((*topic, scraper.rates(topic, now, bucket_size)?))
+            Some((topic, scraper.rates(topic, now, bucket_size)?))
         })
         .collect::<Vec<_>>();
     let maxv = data
@@ -225,7 +225,7 @@ fn mk_table<'a>(
          }| {
             Row::new(vec![
                 Cell::from(Span::styled(
-                    *topic,
+                    &topic.name,
                     Style::default().fg(color_assignment.get(topic)),
                 )),
                 Cell::from(right_align(format_number(*total as f64), 7)),

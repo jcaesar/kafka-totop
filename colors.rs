@@ -3,7 +3,7 @@ use tui::style::Color;
 use crate::uses::*;
 
 pub struct ColorAssignment {
-    inner: HashMap<String, LineColor>,
+    inner: HashMap<Topic, LineColor>,
 }
 
 impl ColorAssignment {
@@ -13,16 +13,16 @@ impl ColorAssignment {
         }
     }
 
-    pub fn compute(&mut self, basestats: &[stats::TopicStats<'_>]) {
+    pub fn compute(&mut self, basestats: &[stats::TopicStats]) {
         let mut colors = LineColor::all_variants();
         let mut topdogs = basestats
             .iter()
             .take(colors.len())
             .filter(|s| s.seen > 0)
-            .map(|s| s.topic)
+            .filter(|s| s.topic.stat_idx == 0)
+            .map(|s| s.topic.clone())
             .collect::<HashSet<_>>();
-        self.inner
-            .retain(|topic: &String, _| topdogs.contains(topic.as_str()));
+        self.inner.retain(|topic, _| topdogs.contains(topic));
         for color in self.inner.values() {
             colors.remove(color);
         }
@@ -30,12 +30,12 @@ impl ColorAssignment {
         for dog in topdogs.drain() {
             // TODO: It's high time for interned topic string names
             self.inner
-                .entry(dog.to_string())
+                .entry(dog)
                 .or_insert_with(|| colors.next().expect("no more dogs than colors"));
         }
     }
 
-    pub fn get(&self, topic: &str) -> Color {
+    pub fn get(&self, topic: &Topic) -> Color {
         self.inner
             .get(topic)
             .map(|c| (*c).into())
