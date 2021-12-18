@@ -79,9 +79,14 @@ pub(crate) fn run(opts: &Opts, mut scraper: Stats) -> Result<()> {
                     );
                 } else {
                     let bucket_size = opts.draw_interval / (width as u32 * 2);
+                    let drawn_topic_names = color_assignment
+                        .colored_topic_names()
+                        .collect::<HashSet<_>>();
                     let (now_date, data) = mk_chart_data(
                         bucket_size,
-                        &basestats[..cmp::min(basestats.len(), color_assignment.len())],
+                        basestats
+                            .iter()
+                            .filter(|stat| drawn_topic_names.contains(&stat.topic.name.as_ref())),
                         &scraper,
                         &mut maxy,
                     );
@@ -197,14 +202,13 @@ fn mk_chart<'a>(
 
 fn mk_chart_data<'a>(
     bucket_size: Duration,
-    basestats: &'a [stats::TopicStats],
+    basestats: impl Iterator<Item = &'a stats::TopicStats>,
     scraper: &Stats,
     maxy: &mut f64,
 ) -> (DateTime<Local>, Vec<(&'a Topic, Vec<(f64, f64)>)>) {
     let now_date = Local::now();
     let now = Instant::now();
     let data = basestats
-        .iter()
         .filter(|t| t.seen > 0)
         .filter_map(|stats::TopicStats { topic, .. }| {
             Some((topic, scraper.rates(topic, now, bucket_size)?))

@@ -42,6 +42,10 @@ impl ColorAssignment {
             .unwrap_or(Color::Gray)
     }
 
+    pub fn colored_topic_names(&self) -> impl Iterator<Item = &str> {
+        self.inner.keys().map(|Topic { name, .. }| name.as_ref())
+    }
+
     pub fn len(&self) -> usize {
         self.inner.len()
     }
