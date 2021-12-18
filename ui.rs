@@ -23,10 +23,16 @@ pub(crate) fn run(opts: &Opts, mut scraper: Stats) -> Result<()> {
     let mut maxy = 1.0f64;
     let mut color_assignment = ColorAssignment::new();
     let mut redraw = true;
+    let mut last_draw = Instant::now();
     loop {
+        let now = Instant::now();
         redraw |= scraper.ingest()?;
-        if let Some(discard) = Instant::now().checked_sub(opts.draw_interval.mul_f64(1.1)) {
+        if let Some(discard) = now.checked_sub(opts.draw_interval.mul_f64(1.1)) {
             scraper.discard_before(discard)
+        }
+        if now.duration_since(last_draw) > Duration::from_secs(1) {
+            redraw |= true;
+            last_draw = now;
         }
 
         if redraw {
