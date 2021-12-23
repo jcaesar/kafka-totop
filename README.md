@@ -8,6 +8,6 @@ This is not a Kafka swiss army knife like [kcat](https://github.com/edenhill/kca
 ![screenshot](/screenshot.png)
 
 Of course, a proper cluster setup would have some kind of monitoring architecture that would give you this information (e.g. based on the [prometheus/jmx_exporter](https://github.com/prometheus/jmx_exporter)).
-But if you had a proper cluster, you probably wouldn't be debugging anyway. This is for those "one-off" situations.
+But when you're debugging, chances are you don't have a proper setup yet. This is for those "one-off" situations.
 
 This repo is a spin-off of [light-kafka-exporter](https://github.com/jcaesar/light-kafka-exporter).
