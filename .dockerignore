@@ -1,4 +1,6 @@
-/target
+target
+Dockerfile
+.dockerignore
 .gdb_history
 .idea
 ekidd-*
