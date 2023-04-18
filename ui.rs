@@ -123,14 +123,17 @@ pub(crate) fn run(opts: &Opts, mut scraper: Stats) -> Result<()> {
         if event::poll(Duration::from_millis(100))? {
             redraw = true;
             match event::read() {
-                Ok(event::Event::Key(event::KeyEvent { code, modifiers })) => {
-                    match (code, modifiers) {
-                        (KeyCode::Char('q'), _) => break,
-                        (KeyCode::Char('c'), KeyModifiers::CONTROL) => break,
-                        (KeyCode::Char('d'), KeyModifiers::CONTROL) => break,
-                        (_, _) => (),
-                    }
-                }
+                Ok(event::Event::Key(event::KeyEvent {
+                    code,
+                    modifiers,
+                    kind: _kind,
+                    ..
+                })) => match (code, modifiers) {
+                    (KeyCode::Char('q'), _) => break,
+                    (KeyCode::Char('c'), KeyModifiers::CONTROL) => break,
+                    (KeyCode::Char('d'), KeyModifiers::CONTROL) => break,
+                    (_, _) => (),
+                },
                 Ok(_) => (), // Redraw
                 Err(e) => Err(e).context("input error")?,
             }

@@ -7,7 +7,7 @@ categories = ["command-line-utilities"]
 keywords = ["kafka", "tui"]
 readme = "README.md"
 license = "MIT"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 rust-version = "1.56"
 
@@ -16,22 +16,24 @@ name = "totop"
 path = "main.rs"
 
 [dependencies]
-rdkafka = { version = "0.28.0", features = ["cmake_build"] }
-anyhow = "1.0.58"
+rdkafka = "0.29.0"
+anyhow = "1.0.70"
 humantime = "2.1.0"
-chrono = "0.4.19"
+chrono = "0.4.24"
 structopt = "0.3.26"
-tui = { version = "0.18.0", default-features = false, features = ['crossterm'] }
-itertools = "0.10.3"
+tui = { version = "0.19.0", default-features = false, features = ["crossterm"] }
+itertools = "0.10.5"
 number_prefix = "0.4.0"
 rand_seeder = "0.2.3"
 rand = "0.8.5"
 better-panic = "0.3.0"
-crossterm = "0.23"
+crossterm = "0.26"
 
 [build-dependencies]
-# Force version that doesn't use cmake --paralllel
-cmake = "0.1.48"
+cc = { version = "1", features = ["jobserver"] }
+
+[features]
+cmake-build = ["rdkafka/cmake-build"]
 
 [profile.release]
 lto = "fat"
