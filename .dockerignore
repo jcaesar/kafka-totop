@@ -1,7 +1,11 @@
 target
-Dockerfile
+*.Dockerfile
 .dockerignore
 .gdb_history
 .idea
 ekidd-*
 *.out.*
+docker-bake.hcl
+.github
+totop-linux*
+totop-win*

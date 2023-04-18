@@ -17,6 +17,36 @@ jobs:
         with:
           command: check
 
+  bake:
+    name: Multiarch Bake
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+        with:
+          config-inline: |
+            [worker.oci]
+              max-parallelism = 2
+      - name: Gather bake definition
+        id: bakedef
+        run: |
+          set -euo pipefail
+          def="$(docker buildx bake --print arti)"
+          cachedef="$(jq <<<"$def" -r --arg ref '${{ github.ref_name }}' '
+            .target|to_entries|.[].key| 
+            ["\(.).cache-from=type=gha,scope=\($ref)-\(.)", "\(.).cache-to=type=gha,mode=max,scope=\($ref)-\(.)"]|.[]
+          ')"
+          echo >>"$GITHUB_OUTPUT" 'cachedef<<EOF'
+          echo >>"$GITHUB_OUTPUT" "$cachedef"
+          echo >>"$GITHUB_OUTPUT" 'EOF'
+      - name: Build
+        uses: docker/bake-action@v2.3.0
+        with:
+          targets: arti
+          set: |
+            ${{ steps.bakedef.outputs.cachedef }}
+
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest
