@@ -11,11 +11,23 @@
       ];
       forAllSystems = genAttrs supportedSystems;
       mk = localSystem: crossSystem: rec {
+        npkgs = import nixpkgs { system = localSystem; };
         systems = (
           if localSystem == crossSystem then
             { system = localSystem; }
           else
-            { inherit crossSystem localSystem; }
+            {
+              inherit crossSystem localSystem;
+              overlays = [
+                (final: prev: {
+                  gcc-unwrapped = prev.gcc-unwrapped.overrideAttrs (old: {
+                    postInstall =
+                      old.postInstall
+                      + "if test -e $libgcc/lib/libgcc_s.so ; then ${npkgs.binutils-unwrapped-all-targets}/bin/strip --strip-debug $libgcc/lib/libgcc_s.so; fi";
+                  });
+                })
+              ];
+            }
         );
         pkgs = (import nixpkgs systems).pkgsMusl;
         main = pkgs.callPackage (
