@@ -12,24 +12,18 @@
       forAllSystems = genAttrs supportedSystems;
       mk = localSystem: crossSystem: rec {
         npkgs = import nixpkgs { system = localSystem; };
-        systems = (
-          if localSystem == crossSystem then
-            { system = localSystem; }
-          else
-            {
-              inherit crossSystem localSystem;
-              overlays = [
-                (final: prev: {
-                  gcc-unwrapped = prev.gcc-unwrapped.overrideAttrs (old: {
-                    postInstall =
-                      old.postInstall
-                      + "if test -e $libgcc/lib/libgcc_s.so ; then ${npkgs.binutils-unwrapped-all-targets}/bin/strip --strip-debug $libgcc/lib/libgcc_s.so; fi";
-                  });
-                })
-              ];
-            }
-        );
-        pkgs = (import nixpkgs systems).pkgsMusl;
+        nixpkgsPatched = npkgs.applyPatches {
+          name = "nixpkgs-patched";
+          src = nixpkgs;
+          patches = [ ./libgcc-strip-debug.patch ];
+        };
+        pkgs =
+          (
+            if localSystem == crossSystem then
+              import nixpkgs { system = localSystem; }
+            else
+              import nixpkgsPatched { inherit crossSystem localSystem; }
+          ).pkgsMusl;
         main = pkgs.callPackage (
           {
             rustPlatform,
