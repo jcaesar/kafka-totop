@@ -22,6 +22,7 @@
         main = pkgs.callPackage (
           {
             rustPlatform,
+            rdkafka,
             buildPackages,
           }:
           rustPlatform.buildRustPackage {
@@ -31,9 +32,44 @@
               ".*rs$"
               "^Cargo\\..*"
             ];
-            nativeBuildInputs = [ buildPackages.cmake ];
-            buildFeatures = ["cmake-build"];
+            nativeBuildInputs = [ buildPackages.pkg-config ];
+            buildInputs = [
+              (rdkafka.overrideAttrs {
+                nativeBuildInputs = [
+                  buildPackages.cmake
+                  buildPackages.ninja
+                ];
+                outputs = [
+                  "out"
+                  "clib"
+                  "cpplib"
+                ];
+                postInstall = ''
+                  mkdir -p $clib/{lib,share/licenses/librdkafka} $cpplib/{lib,share/licenses/librdkafka}
+
+                  # Split off dynamic libs so that linkers can pull in only those
+                  mv $out/lib/librdkafka.so* $clib/lib/
+                  mv $out/lib/librdkafka++.so* $cpplib/lib/
+
+                  # Make license available everywhere
+                  # Other outputs depend on $clib, so put it there and link
+                  mv {$out,$clib}/share/licenses/librdkafka/LICENSES.txt
+                  ln -s $clib/share/licenses/librdkafka/LICENSES.txt $cpplib/share/licenses/librdkafka/LICENSES.txt
+                  ln -s $clib/share/licenses/librdkafka/LICENSES.txt $out/share/licenses/librdkafka/LICENSES.txt
+
+                  # Fixup build config files. I assume nix has a nice way of automating this… can't find it
+                  sed -ri \
+                    -e "s#$out/lib/librdkafka.so#$clib/lib/librdkafka.so#" \
+                    -e "s#$out/lib/librdkafka++.so#$clib/lib/librdkafka++.so#" \
+                    $(find $out/lib/{pkgconfig,cmake}/ -type f)
+                  sed -ri "s#^libdir=.*#libdir=$clib/lib#" $out/lib/pkgconfig/rdkafka.pc
+                  sed -ri "s#^libdir=.*#libdir=$cpplib/lib#" $out/lib/pkgconfig/rdkafka++.pc
+                  # (keep the static libs in $out, that's the dev package)
+                '';
+              })
+            ];
             doCheck = false;
+            env.CARGO_FEATURE_DYNAMIC_LINKING = "yes";
             cargoLock.lockFile = ./Cargo.lock;
             meta.mainProgram = "totop";
           }
