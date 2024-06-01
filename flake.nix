@@ -1,4 +1,5 @@
 {
+inputs.nixpkgs.url = "github:NixOS/nixpkgs/pull/316334/head";
   outputs =
     { nixpkgs, ... }:
     let
@@ -11,18 +12,12 @@
       ];
       forAllSystems = genAttrs supportedSystems;
       mk = localSystem: crossSystem: rec {
-        npkgs = import nixpkgs { system = localSystem; };
-        nixpkgsPatched = npkgs.applyPatches {
-          name = "nixpkgs-patched";
-          src = nixpkgs;
-          patches = [ ./libgcc-strip-debug.patch ];
-        };
         pkgs =
           (
             if localSystem == crossSystem then
               import nixpkgs { system = localSystem; }
             else
-              import nixpkgsPatched { inherit crossSystem localSystem; }
+              import nixpkgs{ inherit crossSystem localSystem; }
           ).pkgsMusl;
         main = pkgs.callPackage (
           {
