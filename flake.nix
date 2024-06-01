@@ -1,5 +1,5 @@
 {
-inputs.nixpkgs.url = "github:NixOS/nixpkgs/pull/316334/head";
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/pull/316334/head";
   outputs =
     { nixpkgs, ... }:
     let
@@ -17,12 +17,11 @@ inputs.nixpkgs.url = "github:NixOS/nixpkgs/pull/316334/head";
             if localSystem == crossSystem then
               import nixpkgs { system = localSystem; }
             else
-              import nixpkgs{ inherit crossSystem localSystem; }
+              import nixpkgs { inherit crossSystem localSystem; }
           ).pkgsMusl;
         main = pkgs.callPackage (
           {
             rustPlatform,
-            rdkafka,
             buildPackages,
           }:
           rustPlatform.buildRustPackage {
@@ -32,10 +31,9 @@ inputs.nixpkgs.url = "github:NixOS/nixpkgs/pull/316334/head";
               ".*rs$"
               "^Cargo\\..*"
             ];
-            nativeBuildInputs = [ buildPackages.pkg-config ];
-            buildInputs = [ rdkafka ];
+            nativeBuildInputs = [ buildPackages.cmake ];
+            buildFeatures = ["cmake-build"];
             doCheck = false;
-            env.CARGO_FEATURE_DYNAMIC_LINKING = "yes";
             cargoLock.lockFile = ./Cargo.lock;
             meta.mainProgram = "totop";
           }
