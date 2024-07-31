@@ -1,5 +1,4 @@
 {
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/pull/316334/head";
   outputs =
     { nixpkgs, ... }:
     let
