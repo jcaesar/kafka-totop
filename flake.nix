@@ -10,79 +10,91 @@
         "riscv64-linux"
       ];
       forAllSystems = genAttrs supportedSystems;
-      mk = localSystem: crossSystem: rec {
-        pkgs =
-          (
-            if localSystem == crossSystem then
-              import nixpkgs { system = localSystem; }
-            else
-              import nixpkgs { inherit crossSystem localSystem; }
-          ).pkgsMusl;
-        main = pkgs.callPackage (
-          {
-            rustPlatform,
-            rdkafka,
-            buildPackages,
-          }:
-          rustPlatform.buildRustPackage {
-            pname = "kafka-totop";
-            version = "0.1.0";
-            src = sourceByRegex ./. [
-              ".*rs$"
-              "^Cargo\\..*"
-            ];
-            nativeBuildInputs = [ buildPackages.pkg-config ];
-            buildInputs = [
-              (rdkafka.overrideAttrs {
-                nativeBuildInputs = [
-                  buildPackages.cmake
-                  buildPackages.ninja
-                ];
-                outputs = [
-                  "out"
-                  "clib"
-                  "cpplib"
-                ];
-                postInstall = ''
-                  mkdir -p $clib/{lib,share/licenses/librdkafka} $cpplib/{lib,share/licenses/librdkafka}
+      mk =
+        {
+          systems,
+          musl ? true,
+        }:
+        rec {
+          pkgsPlain = import nixpkgs systems;
+          pkgs = if musl then pkgsPlain.pkgsMusl else pkgsPlain;
+          main = pkgs.callPackage (
+            {
+              rustPlatform,
+              rdkafka,
+              buildPackages,
+            }:
+            rustPlatform.buildRustPackage {
+              pname = "kafka-totop";
+              version = "0.1.0";
+              src = sourceByRegex ./. [
+                ".*rs$"
+                "^Cargo\\..*"
+              ];
+              nativeBuildInputs = [ buildPackages.pkg-config ];
+              buildInputs = [
+                (rdkafka.overrideAttrs {
+                  nativeBuildInputs = [
+                    buildPackages.cmake
+                    buildPackages.ninja
+                  ];
+                  outputs = [
+                    "out"
+                    "clib"
+                    "cpplib"
+                  ];
+                  postInstall = ''
+                    mkdir -p $clib/{lib,share/licenses/librdkafka} $cpplib/{lib,share/licenses/librdkafka}
 
-                  # Split off dynamic libs so that linkers can pull in only those
-                  mv $out/lib/librdkafka.so* $clib/lib/
-                  mv $out/lib/librdkafka++.so* $cpplib/lib/
+                    # Split off dynamic libs so that linkers can pull in only those
+                    mv $out/lib/librdkafka.so* $clib/lib/
+                    mv $out/lib/librdkafka++.so* $cpplib/lib/
 
-                  # Make license available everywhere
-                  # Other outputs depend on $clib, so put it there and link
-                  mv {$out,$clib}/share/licenses/librdkafka/LICENSES.txt
-                  ln -s $clib/share/licenses/librdkafka/LICENSES.txt $cpplib/share/licenses/librdkafka/LICENSES.txt
-                  ln -s $clib/share/licenses/librdkafka/LICENSES.txt $out/share/licenses/librdkafka/LICENSES.txt
+                    # Make license available everywhere
+                    # Other outputs depend on $clib, so put it there and link
+                    mv {$out,$clib}/share/licenses/librdkafka/LICENSES.txt
+                    ln -s $clib/share/licenses/librdkafka/LICENSES.txt $cpplib/share/licenses/librdkafka/LICENSES.txt
+                    ln -s $clib/share/licenses/librdkafka/LICENSES.txt $out/share/licenses/librdkafka/LICENSES.txt
 
-                  # Fixup build config files. I assume nix has a nice way of automating this… can't find it
-                  sed -ri \
-                    -e "s#$out/lib/librdkafka.so#$clib/lib/librdkafka.so#" \
-                    -e "s#$out/lib/librdkafka++.so#$clib/lib/librdkafka++.so#" \
-                    $(find $out/lib/{pkgconfig,cmake}/ -type f)
-                  sed -ri "s#^libdir=.*#libdir=$clib/lib#" $out/lib/pkgconfig/rdkafka.pc
-                  sed -ri "s#^libdir=.*#libdir=$cpplib/lib#" $out/lib/pkgconfig/rdkafka++.pc
-                  # (keep the static libs in $out, that's the dev package)
-                '';
-              })
-            ];
-            doCheck = false;
-            env.CARGO_FEATURE_DYNAMIC_LINKING = "yes";
-            cargoLock.lockFile = ./Cargo.lock;
-            meta.mainProgram = "totop";
-          }
-        ) { };
-        image = pkgs.buildPackages.dockerTools.streamLayeredImage {
-          name = "kafka-totop";
-          contents = [ pkgs.cacert ];
-          config.Entrypoint = [ (pkgs.lib.getExe main) ];
+                    # Fixup build config files. I assume nix has a nice way of automating this… can't find it
+                    sed -ri \
+                      -e "s#$out/lib/librdkafka.so#$clib/lib/librdkafka.so#" \
+                      -e "s#$out/lib/librdkafka++.so#$clib/lib/librdkafka++.so#" \
+                      $(find $out/lib/{pkgconfig,cmake}/ -type f)
+                    sed -ri "s#^libdir=.*#libdir=$clib/lib#" $out/lib/pkgconfig/rdkafka.pc
+                    sed -ri "s#^libdir=.*#libdir=$cpplib/lib#" $out/lib/pkgconfig/rdkafka++.pc
+                    # (keep the static libs in $out, that's the dev package)
+                  '';
+                })
+              ];
+              doCheck = false;
+              env.CARGO_FEATURE_DYNAMIC_LINKING = "yes";
+              cargoLock.lockFile = ./Cargo.lock;
+              meta.mainProgram = "totop";
+            }
+          ) { };
+          image = pkgs.buildPackages.dockerTools.streamLayeredImage {
+            name = "kafka-totop";
+            contents = [ pkgs.cacert ];
+            config.Entrypoint = [ (pkgs.lib.getExe main) ];
+          };
         };
-      };
     in
     {
       packages = forAllSystems (localSystem: {
-        default = (mk localSystem localSystem).main;
+        default =
+          (mk {
+            systems = {
+              system = localSystem;
+            };
+            musl = false;
+          }).main;
+        static =
+          (mk {
+            systems = {
+              system = localSystem;
+            };
+          }).main;
         mergedOciDir =
           let
             inherit (nixpkgs.lib) concatStringsSep mapAttrsToList getExe';
@@ -114,7 +126,12 @@
             name = "stream-image-${remoteSystem}";
             value = {
               type = "app";
-              program = "${(mk localSystem remoteSystem).image}";
+              program = "${(mk {
+                systems = {
+                  inherit localSystem remoteSystem;
+                };
+              }).image
+              }";
             };
           }) supportedSystems
         )
@@ -134,7 +151,13 @@
               cargo-watch
               rustc
             ];
-            inputsFrom = [ (mk system system) ];
+            inputsFrom = [
+              (mk {
+                systems = {
+                  inherit system;
+                };
+              })
+            ];
           };
         }
       );
