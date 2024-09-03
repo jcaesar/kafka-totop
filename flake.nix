@@ -13,7 +13,7 @@
       mk =
         {
           systems,
-          musl ? true,
+          musl ? true, # Takes the total size of the 4 docker images from 69 MB to 40 MB. Burns several days worth of cycles compiling.
         }:
         rec {
           pkgsPlain = import nixpkgs systems;
