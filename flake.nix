@@ -74,9 +74,16 @@
             }
           ) { };
           image = pkgs.buildPackages.dockerTools.streamLayeredImage {
-            name = "kafka-totop";
+            name = "kafka-totop-${systems.crossSystem or "native"}";
             contents = [ pkgs.cacert ];
             config.Entrypoint = [ (pkgs.lib.getExe main) ];
+          };
+        };
+      mkCross =
+        localSystem: crossSystem:
+        mk {
+          systems = {
+            inherit localSystem crossSystem;
           };
         };
     in
@@ -99,7 +106,7 @@
           let
             inherit (nixpkgs.lib) concatStringsSep mapAttrsToList getExe';
             pkgs = import nixpkgs { system = localSystem; };
-            images = forAllSystems (crossSystem: (mk localSystem crossSystem).image);
+            images = forAllSystems (crossSystem: (mkCross localSystem crossSystem).image);
             regctl = getExe' pkgs.regctl "regctl";
             ociDirs = mapAttrsToList (k: v: ''
               ${v} >docker-${k}.tar
@@ -122,16 +129,11 @@
       apps = forAllSystems (
         localSystem:
         listToAttrs (
-          map (remoteSystem: {
-            name = "stream-image-${remoteSystem}";
+          map (crossSystem: {
+            name = "stream-image-${crossSystem}";
             value = {
               type = "app";
-              program = "${(mk {
-                systems = {
-                  inherit localSystem remoteSystem;
-                };
-              }).image
-              }";
+              program = "${(mkCross localSystem crossSystem).image}";
             };
           }) supportedSystems
         )
