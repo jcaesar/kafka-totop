@@ -2,14 +2,18 @@
   "nodes": {
     "nixpkgs": {
       "locked": {
-        "lastModified": 0,
-        "narHash": "sha256-JP6fFxQyeWd5GTJrlwItIJJtT2VuOiwIzb/QEMNICwI=",
-        "path": "/nix/store/rqh0dgkndnbawlnjd3j9n9906gr2ima1-source",
-        "type": "path"
+        "lastModified": 1729239757,
+        "narHash": "sha256-P+7UqhgO1buhOnGQk3af8aGpFhhioeSNHzkatjJ8OgI=",
+        "owner": "jcaesar",
+        "repo": "fork2pr-nixpkgs",
+        "rev": "c8c8affbea8dbbb2bf191f535302f3924e938a66",
+        "type": "github"
       },
       "original": {
-        "id": "nixpkgs",
-        "type": "indirect"
+        "owner": "jcaesar",
+        "ref": "pr-21",
+        "repo": "fork2pr-nixpkgs",
+        "type": "github"
       }
     },
     "root": {
