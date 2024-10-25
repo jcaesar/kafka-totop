@@ -1,0 +1,22 @@
+name: Flake check
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-22.04
+    permissions:
+      id-token: "write"
+      contents: "read"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      # - uses: DeterminateSystems/flake-checker-action@main
+      - { name: Base, run: nix build . }
+      - name: Free up disk space
+        run: sudo find /opt/{az,microsoft,google} /opt/hostedtoolcache/{go,CodeQL} /usr/local/lib/android /usr/share/dotnet -type f -delete
+      - { name: Static, run: nix build .#static } # takes 3 hours
+      #- { name: Multiplatform images, run: nix build .#mergedOciDir } # times out. :(
