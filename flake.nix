@@ -1,6 +1,5 @@
 {
-  outputs =
-    { nixpkgs, ... }:
+  outputs = { nixpkgs, self }:
     let
       inherit (nixpkgs.lib) genAttrs listToAttrs sourceByRegex;
       supportedSystems = [
@@ -129,6 +128,11 @@
           };
         }
       );
+      checks.x86_64-linux.clippy = self.packages.x86_64-linux.default.overrideAttrs (orig: {
+        nativeBuildInputs = orig.nativeBuildInputs ++ [ nixpkgs.legacyPackages.x86_64-linux.clippy ];
+        buildPhase = "cargo clippy";
+        installPhase = "";
+      });
     };
   inputs.nixpkgs.url = "github:jcaesar/fork2pr-nixpkgs/pr-21";
 }
